@@ -19,6 +19,7 @@ import {
 import { getAlertsByStatus } from '@/data/mock-alerts';
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { ThemeToggle } from '@/components/shared/theme-toggle';
 
 interface HeaderProps {
   title: string;
@@ -30,24 +31,12 @@ export function Header({ title, subtitle }: HeaderProps) {
 
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur-sm">
-      {/* Status bar - like s1.pdf top bar */}
-      <div className="flex items-center gap-4 px-6 py-1.5 text-[11px] text-muted-foreground border-b border-border/50 bg-muted/30">
-        <div className="flex items-center gap-1.5">
-          <span className="h-1.5 w-1.5 rounded-full bg-[var(--success)]" />
-          <span>All systems operational</span>
-        </div>
-        <span className="text-border">•</span>
-        <span>API: 45ms</span>
-        <span className="text-border">•</span>
-        <span>Sensors: 156 active</span>
-      </div>
-
       {/* Main header */}
-      <div className="flex h-12 items-center justify-between px-6">
+      <div className="flex h-14 items-center justify-between px-6">
         <div className="min-w-0">
-          <h1 className="text-[15px] font-semibold tracking-tight truncate">{title}</h1>
+          <h1 className="text-base font-semibold tracking-tight truncate">{title}</h1>
           {subtitle && (
-            <p className="text-[11px] text-muted-foreground truncate">{subtitle}</p>
+            <p className="text-xs text-muted-foreground truncate">{subtitle}</p>
           )}
         </div>
 
@@ -57,7 +46,7 @@ export function Header({ title, subtitle }: HeaderProps) {
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Search..."
-              className="h-8 w-[180px] pl-8 text-[12px] bg-muted/40 border-0 focus-visible:ring-1 rounded-md"
+              className="h-8 w-[180px] pl-8 text-xs bg-muted/40 border-0 focus-visible:ring-1 rounded-md"
             />
           </div>
 
@@ -75,10 +64,10 @@ export function Header({ title, subtitle }: HeaderProps) {
                     </button>
                   </DropdownMenuTrigger>
                 </TooltipTrigger>
-                <TooltipContent side="bottom" className="text-[11px]">Notifications</TooltipContent>
+                <TooltipContent side="bottom" className="text-xs">Notifications</TooltipContent>
               </Tooltip>
               <DropdownMenuContent align="end" className="w-72">
-                <DropdownMenuLabel className="flex items-center justify-between text-[12px] font-medium">
+                <DropdownMenuLabel className="flex items-center justify-between text-xs font-medium">
                   <span>Notifications</span>
                   <span className="text-[10px] font-normal text-muted-foreground">
                     {activeAlerts.length} active
@@ -100,7 +89,7 @@ export function Header({ title, subtitle }: HeaderProps) {
                             alert.severity === 'info' && 'bg-[var(--info)]'
                           )}
                         />
-                        <span className="flex-1 text-[12px] font-medium truncate">{alert.type}</span>
+                        <span className="flex-1 text-xs font-medium truncate">{alert.type}</span>
                         <span className="text-[10px] text-muted-foreground shrink-0">
                           {formatDistanceToNow(alert.createdAt, { addSuffix: true })}
                         </span>
@@ -112,13 +101,23 @@ export function Header({ title, subtitle }: HeaderProps) {
                 {activeAlerts.length > 5 && (
                   <>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem className="justify-center text-[12px] text-primary font-medium">
+                    <DropdownMenuItem className="justify-center text-xs text-primary font-medium">
                       View all alerts
                     </DropdownMenuItem>
                   </>
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
+
+            {/* Theme Toggle */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div>
+                  <ThemeToggle />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">Switch Theme</TooltipContent>
+            </Tooltip>
 
             {/* Help */}
             <Tooltip>
@@ -127,7 +126,7 @@ export function Header({ title, subtitle }: HeaderProps) {
                   <HelpCircle className="h-4 w-4 text-muted-foreground" />
                 </button>
               </TooltipTrigger>
-              <TooltipContent side="bottom" className="text-[11px]">Help & Support</TooltipContent>
+              <TooltipContent side="bottom" className="text-xs">Help & Support</TooltipContent>
             </Tooltip>
           </TooltipProvider>
         </div>

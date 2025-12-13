@@ -1,14 +1,10 @@
 'use client';
 
-import { Card } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
 import {
   Lightbulb,
   DollarSign,
   Zap,
   TrendingUp,
-  AlertTriangle,
-  CheckCircle2
 } from 'lucide-react';
 import {
   mockInsights,
@@ -31,80 +27,64 @@ export function InsightsSummary() {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       {/* Active Insights */}
-      <Card className="p-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-blue-50 dark:bg-blue-950/50">
-            <Lightbulb className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-          </div>
-          <div>
-            <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Active Insights</p>
-            <div className="flex items-baseline gap-2">
-              <p className="text-2xl font-bold tabular-nums">{totalInsights}</p>
-              {highPriority > 0 && (
-                <span className="text-[11px] font-medium text-rose-600 dark:text-rose-400">
-                  {highPriority} high priority
-                </span>
-              )}
-            </div>
-          </div>
+      <div className="border-2 border-slate-300 bg-white p-4 border-l-[3px] border-l-blue-500">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Active Insights</span>
+          <Lightbulb className="h-4 w-4 text-blue-600" />
         </div>
-      </Card>
+        <div className="flex items-baseline gap-2">
+          <span className="text-xl font-bold font-mono text-blue-600">{totalInsights}</span>
+          {highPriority > 0 && (
+            <span className="text-[10px] font-medium text-rose-600">
+              {highPriority} HIGH
+            </span>
+          )}
+        </div>
+      </div>
 
       {/* Potential Savings */}
-      <Card className="p-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/50">
-            <DollarSign className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-          </div>
-          <div>
-            <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Potential Savings</p>
-            <div className="flex items-baseline gap-2">
-              <p className="text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
-                ${potentialSavings.toLocaleString()}
-              </p>
-              <span className="text-[11px] text-muted-foreground">/month</span>
-            </div>
-          </div>
+      <div className="border-2 border-slate-300 bg-white p-4 border-l-[3px] border-l-emerald-500">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Potential Savings</span>
+          <DollarSign className="h-4 w-4 text-emerald-600" />
         </div>
-      </Card>
+        <div className="flex items-baseline gap-1">
+          <span className="text-xl font-bold font-mono text-emerald-600">
+            ${potentialSavings.toLocaleString()}
+          </span>
+          <span className="text-[10px] text-slate-500">/MO</span>
+        </div>
+      </div>
 
       {/* Energy Savings */}
-      <Card className="p-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-amber-50 dark:bg-amber-950/50">
-            <Zap className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-          </div>
-          <div>
-            <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Energy Potential</p>
-            <div className="flex items-baseline gap-2">
-              <p className="text-2xl font-bold tabular-nums text-amber-600 dark:text-amber-400">
-                {energySavings.toLocaleString()}
-              </p>
-              <span className="text-[11px] text-muted-foreground">kWh/mo</span>
-            </div>
-          </div>
+      <div className="border-2 border-slate-300 bg-white p-4 border-l-[3px] border-l-amber-500">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Energy Potential</span>
+          <Zap className="h-4 w-4 text-amber-600" />
         </div>
-      </Card>
+        <div className="flex items-baseline gap-1">
+          <span className="text-xl font-bold font-mono text-amber-600">
+            {energySavings.toLocaleString()}
+          </span>
+          <span className="text-[10px] text-slate-500">KWH/MO</span>
+        </div>
+      </div>
 
       {/* Realized Savings */}
-      <Card className="p-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-purple-50 dark:bg-purple-950/50">
-            <TrendingUp className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-          </div>
-          <div>
-            <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Realized This Month</p>
-            <div className="flex items-baseline gap-2">
-              <p className="text-2xl font-bold tabular-nums text-purple-600 dark:text-purple-400">
-                ${totalSavings.toLocaleString()}
-              </p>
-              <span className="text-[11px] font-medium text-emerald-600">
-                +{percentChange}%
-              </span>
-            </div>
-          </div>
+      <div className="border-2 border-slate-300 bg-white p-4 border-l-[3px] border-l-purple-500">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Realized This Month</span>
+          <TrendingUp className="h-4 w-4 text-purple-600" />
         </div>
-      </Card>
+        <div className="flex items-baseline gap-1">
+          <span className="text-xl font-bold font-mono text-purple-600">
+            ${totalSavings.toLocaleString()}
+          </span>
+          <span className="text-[10px] font-bold text-emerald-600">
+            +{percentChange}%
+          </span>
+        </div>
+      </div>
     </div>
   );
 }

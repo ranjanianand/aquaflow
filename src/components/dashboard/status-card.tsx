@@ -74,11 +74,11 @@ export function StatusCard({
               <div className={cn('p-1.5 rounded-md', iconBgColors[color])}>
                 <Icon className="h-4 w-4" strokeWidth={1.75} />
               </div>
-              <p className="text-[13px] font-medium text-muted-foreground">
+              <p className="text-sm font-medium text-muted-foreground">
                 {title}
               </p>
             </div>
-            <p className="text-[28px] font-semibold tracking-tight tabular-nums leading-none">{value}</p>
+            <p className="text-3xl font-semibold tracking-tight tabular-nums leading-none">{value}</p>
           </div>
 
           {/* Status pulse indicator */}
@@ -106,12 +106,12 @@ export function StatusCard({
                   const TrendIconComponent = TrendIcon[trend.direction];
                   return <TrendIconComponent className={cn('h-3.5 w-3.5', trendColors[trend.direction])} />;
                 })()}
-                <span className={cn('text-[12px] font-medium', trendColors[trend.direction])}>
+                <span className={cn('text-xs font-medium', trendColors[trend.direction])}>
                   {trend.value}
                 </span>
               </>
             )}
-            {subtitle && <span className="text-[12px] text-muted-foreground">{subtitle}</span>}
+            {subtitle && <span className="text-xs text-muted-foreground">{subtitle}</span>}
           </div>
         )}
       </div>

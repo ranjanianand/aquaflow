@@ -54,7 +54,7 @@ function ProcessBar({ process }: ProcessBarProps) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5">
           {getStatusIcon(process.status)}
-          <span className="text-[12px] font-medium">{getProcessLabel(process.processType)}</span>
+          <span className="text-xs font-medium">{getProcessLabel(process.processType)}</span>
         </div>
         <div className="flex items-center gap-2">
           <span className={cn(
@@ -63,7 +63,7 @@ function ProcessBar({ process }: ProcessBarProps) {
           )}>
             {difference >= 0 ? '+' : ''}{difference}%
           </span>
-          <span className="text-[12px] font-semibold tabular-nums">{process.efficiency}%</span>
+          <span className="text-xs font-semibold tabular-nums">{process.efficiency}%</span>
         </div>
       </div>
       <div className="relative h-2 bg-muted rounded-full overflow-hidden">
@@ -98,9 +98,9 @@ export function ProcessEfficiencyCard() {
             <div className="p-1.5 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400">
               <Workflow className="h-4 w-4" strokeWidth={1.75} />
             </div>
-            <h3 className="text-[13px] font-semibold">Process Efficiency</h3>
+            <h3 className="text-sm font-semibold">Process Efficiency</h3>
           </div>
-          <Link href="/insights" className="text-[11px] text-primary hover:underline flex items-center gap-0.5">
+          <Link href="/insights" className="text-xs text-primary hover:underline flex items-center gap-0.5">
             Details
             <ArrowRight className="h-3 w-3" />
           </Link>

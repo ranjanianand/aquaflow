@@ -1,4 +1,4 @@
-import { Sensor, SensorReading, SensorType, SensorStatus } from '@/types';
+import { Sensor, SensorReading, SensorType, SensorStatus, SensorCommStatus } from '@/types';
 
 // Seeded random number generator for deterministic values
 const seededRandom = (seed: number): number => {
@@ -32,17 +32,26 @@ const getStatus = (value: number, min: number, max: number): SensorStatus => {
 };
 
 // Sensor configurations by type with fixed initial values for hydration stability
-const sensorConfigs: Record<SensorType, { unit: string; min: number; max: number; base: number; variance: number; initialOffset: number }> = {
-  pH: { unit: 'pH', min: 6.5, max: 8.5, base: 7.2, variance: 0.5, initialOffset: -0.4 },
-  flow: { unit: 'm³/h', min: 100, max: 500, base: 350, variance: 50, initialOffset: 12 },
-  pressure: { unit: 'bar', min: 2.0, max: 6.0, base: 4.2, variance: 0.5, initialOffset: 0.1 },
-  temperature: { unit: '°C', min: 15, max: 35, base: 24, variance: 3, initialOffset: 1 },
-  turbidity: { unit: 'NTU', min: 0, max: 4.0, base: 1.2, variance: 0.8, initialOffset: 0.3 },
-  chlorine: { unit: 'mg/L', min: 0.2, max: 2.0, base: 0.8, variance: 0.3, initialOffset: 0.1 },
-  DO: { unit: 'mg/L', min: 4.0, max: 12.0, base: 7.5, variance: 1.5, initialOffset: 0.5 },
-  level: { unit: '%', min: 20, max: 95, base: 72, variance: 15, initialOffset: 3 },
-  conductivity: { unit: 'µS/cm', min: 200, max: 800, base: 450, variance: 100, initialOffset: 25 },
-  ORP: { unit: 'mV', min: 200, max: 800, base: 650, variance: 100, initialOffset: -30 },
+const sensorConfigs: Record<SensorType, { unit: string; min: number; max: number; base: number; setpoint: number; variance: number; initialOffset: number }> = {
+  pH: { unit: 'pH', min: 6.5, max: 8.5, base: 7.2, setpoint: 7.0, variance: 0.5, initialOffset: -0.4 },
+  flow: { unit: 'm³/h', min: 100, max: 500, base: 350, setpoint: 300, variance: 50, initialOffset: 12 },
+  pressure: { unit: 'bar', min: 2.0, max: 6.0, base: 4.2, setpoint: 4.0, variance: 0.5, initialOffset: 0.1 },
+  temperature: { unit: '°C', min: 15, max: 35, base: 24, setpoint: 25, variance: 3, initialOffset: 1 },
+  turbidity: { unit: 'NTU', min: 0, max: 4.0, base: 1.2, setpoint: 1.0, variance: 0.8, initialOffset: 0.3 },
+  chlorine: { unit: 'mg/L', min: 0.2, max: 2.0, base: 0.8, setpoint: 1.0, variance: 0.3, initialOffset: 0.1 },
+  DO: { unit: 'mg/L', min: 4.0, max: 12.0, base: 7.5, setpoint: 8.0, variance: 1.5, initialOffset: 0.5 },
+  level: { unit: '%', min: 20, max: 95, base: 72, setpoint: 75, variance: 15, initialOffset: 3 },
+  conductivity: { unit: 'µS/cm', min: 200, max: 800, base: 450, setpoint: 400, variance: 100, initialOffset: 25 },
+  ORP: { unit: 'mV', min: 200, max: 800, base: 650, setpoint: 600, variance: 100, initialOffset: -30 },
+};
+
+// Get communication status based on lastUpdated timestamp
+const getCommStatus = (lastUpdated: Date): SensorCommStatus => {
+  const now = Date.now();
+  const age = now - lastUpdated.getTime();
+  if (age > 60000) return 'offline'; // > 1 minute
+  if (age > 30000) return 'stale'; // > 30 seconds
+  return 'online';
 };
 
 // Plant-specific offsets for variety (deterministic)
@@ -58,6 +67,7 @@ const plantOffsets: Record<string, number> = {
 // Generate sensors for a plant with deterministic values
 const generateSensorsForPlant = (plantId: string, sensorTypes: SensorType[]): Sensor[] => {
   const plantOffset = plantOffsets[plantId] || 1.0;
+  const now = new Date();
 
   return sensorTypes.map((type, index) => {
     const config = sensorConfigs[type];
@@ -65,6 +75,7 @@ const generateSensorsForPlant = (plantId: string, sensorTypes: SensorType[]): Se
     const seed = plantId.charCodeAt(plantId.length - 1) * 100 + index;
     const currentValue = config.base + config.initialOffset * plantOffset;
     const status = getStatus(currentValue, config.min, config.max);
+    const lastUpdated = now;
 
     return {
       id: `${plantId}-sensor-${index + 1}`,
@@ -75,8 +86,10 @@ const generateSensorsForPlant = (plantId: string, sensorTypes: SensorType[]): Se
       currentValue: parseFloat(currentValue.toFixed(2)),
       minThreshold: config.min,
       maxThreshold: config.max,
+      setpoint: config.setpoint,
       status,
-      lastUpdated: new Date('2025-01-15T12:00:00Z'), // Fixed timestamp
+      commStatus: getCommStatus(lastUpdated),
+      lastUpdated,
       history: generateHistory(config.base, config.variance, seed),
     };
   });
@@ -115,7 +128,8 @@ const puneSensors = generateSensorsForPlant('plant-6', [
   'pH', 'flow', 'pressure', 'temperature'
 ]);
 puneSensors.forEach(sensor => {
-  sensor.lastUpdated = new Date(Date.now() - 3600000);
+  sensor.lastUpdated = new Date(Date.now() - 120000); // 2 minutes ago - offline
+  sensor.commStatus = 'offline';
 });
 
 export const mockSensors: Sensor[] = [
@@ -161,6 +175,7 @@ export const updateSensorValue = (sensorId: string): Sensor | undefined => {
   sensor.currentValue = parseFloat((sensor.currentValue + change).toFixed(2));
   sensor.status = getStatus(sensor.currentValue, sensor.minThreshold, sensor.maxThreshold);
   sensor.lastUpdated = new Date();
+  sensor.commStatus = 'online';
 
   // Add to history
   sensor.history.push({
@@ -174,4 +189,39 @@ export const updateSensorValue = (sensorId: string): Sensor | undefined => {
   }
 
   return sensor;
+};
+
+// Update all sensors for a plant
+export const updateAllSensorsForPlant = (plantId: string): Sensor[] => {
+  const plantSensors = mockSensors.filter(s => s.plantId === plantId);
+  plantSensors.forEach(sensor => {
+    // Skip offline plants (plant-6)
+    if (sensor.plantId === 'plant-6') return;
+
+    const config = sensorConfigs[sensor.type];
+    const change = (Math.random() - 0.5) * config.variance * 0.15;
+    sensor.currentValue = parseFloat((sensor.currentValue + change).toFixed(2));
+    sensor.status = getStatus(sensor.currentValue, sensor.minThreshold, sensor.maxThreshold);
+    sensor.lastUpdated = new Date();
+    sensor.commStatus = 'online';
+
+    // Add to history occasionally (every 5 updates roughly)
+    if (Math.random() < 0.2) {
+      sensor.history.push({
+        timestamp: new Date(),
+        value: sensor.currentValue,
+      });
+      if (sensor.history.length > 24) {
+        sensor.history.shift();
+      }
+    }
+  });
+  return plantSensors;
+};
+
+// Refresh comm status based on lastUpdated
+export const refreshCommStatus = (): void => {
+  mockSensors.forEach(sensor => {
+    sensor.commStatus = getCommStatus(sensor.lastUpdated);
+  });
 };

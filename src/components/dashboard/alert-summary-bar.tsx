@@ -67,19 +67,19 @@ export function AlertSummaryBar() {
     <div className="bg-card rounded-lg border border-border">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
-        <h3 className="text-[13px] font-semibold">24-Hour Alert Distribution</h3>
+        <h3 className="text-sm font-semibold">24-Hour Alert Distribution</h3>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1.5">
             <span className="h-2.5 w-2.5 rounded-sm bg-rose-400" />
-            <span className="text-[11px] text-muted-foreground">{totals.high} High</span>
+            <span className="text-xs text-muted-foreground">{totals.high} High</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="h-2.5 w-2.5 rounded-sm bg-amber-400" />
-            <span className="text-[11px] text-muted-foreground">{totals.medium} Medium</span>
+            <span className="text-xs text-muted-foreground">{totals.medium} Medium</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="h-2.5 w-2.5 rounded-sm bg-sky-400" />
-            <span className="text-[11px] text-muted-foreground">{totals.low} Low</span>
+            <span className="text-xs text-muted-foreground">{totals.low} Low</span>
           </div>
         </div>
       </div>

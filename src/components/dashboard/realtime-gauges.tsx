@@ -47,7 +47,7 @@ function SensorCard({ sensor }: { sensor: SensorData }) {
     <div className="bg-card rounded-lg border border-border p-4">
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
-        <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
+        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
           {sensor.name}
         </span>
         {sensor.status !== 'normal' && (
@@ -62,7 +62,7 @@ function SensorCard({ sensor }: { sensor: SensorData }) {
       {/* Value */}
       <div className="flex items-baseline gap-1.5 mb-3">
         <span className="text-2xl font-semibold tabular-nums">{sensor.value.toFixed(1)}</span>
-        <span className="text-[12px] text-muted-foreground">{sensor.unit}</span>
+        <span className="text-xs text-muted-foreground">{sensor.unit}</span>
         <div className="ml-auto flex items-center gap-1">
           {sensor.trend === 'up' && <TrendingUp className="h-3.5 w-3.5 text-muted-foreground" />}
           {sensor.trend === 'down' && <TrendingDown className="h-3.5 w-3.5 text-muted-foreground" />}
@@ -140,13 +140,13 @@ export function RealtimeGauges() {
     <div className="bg-card rounded-lg border border-border">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
-        <h3 className="text-[13px] font-semibold">Real-Time Sensors</h3>
+        <h3 className="text-sm font-semibold">Real-Time Sensors</h3>
         <div className="flex items-center gap-2">
           <span className="relative flex h-2 w-2">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500/50 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
           </span>
-          <span className="text-[11px] text-muted-foreground">Live</span>
+          <span className="text-xs text-muted-foreground">Live</span>
         </div>
       </div>
 

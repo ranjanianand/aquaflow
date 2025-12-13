@@ -2,13 +2,11 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import {
-  LayoutDashboard,
   Activity,
   Bell,
-  TrendingUp,
   FileText,
   Building2,
   Users,
@@ -20,6 +18,19 @@ import {
   Lightbulb,
   Workflow,
   LogOut,
+  Briefcase,
+  ScrollText,
+  BookOpen,
+  Zap,
+  Wrench,
+  Box,
+  Package,
+  ShoppingCart,
+  FileCheck,
+  Gauge,
+  HardHat,
+  BarChart3,
+  PieChart,
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
@@ -47,30 +58,55 @@ const navigation: NavSection[] = [
   {
     title: 'Overview',
     items: [
-      { title: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-      { title: 'Live Monitoring', href: '/monitoring', icon: Activity },
-      { title: 'Alerts Center', href: '/alerts', icon: Bell, badge: getActiveAlertsCount() },
+      { title: 'Operator View', href: '/dashboard-v2', icon: HardHat },
+      { title: 'Manager View', href: '/dashboard-v2?role=manager', icon: BarChart3 },
+      { title: 'Executive View', href: '/dashboard-v2?role=executive', icon: PieChart },
+      { title: 'Alarms', href: '/alerts', icon: Bell, badge: getActiveAlertsCount() },
     ],
   },
   {
-    title: 'Advanced',
+    title: 'Operations',
     items: [
-      { title: 'Insights', href: '/insights', icon: Lightbulb },
-      { title: 'AI Support', href: '/ai-support', icon: MessageSquare },
-      { title: 'Predictive', href: '/predictive', icon: Cpu },
-      { title: 'Process Flow', href: '/process-flow-schematic', icon: Workflow },
+      { title: 'Real-Time', href: '/monitoring', icon: Activity },
+      { title: 'Maintenance', href: '/service-monitor', icon: Wrench },
+      { title: 'Asset Health', href: '/asset-monitor', icon: Box },
     ],
   },
   {
-    title: 'Management',
+    title: 'Analytics',
+    items: [
+      { title: 'Trends', href: '/insights', icon: Lightbulb },
+      { title: 'Predictive', href: '/predictive', icon: Cpu },
+      { title: 'Energy', href: '/energy', icon: Zap },
+    ],
+  },
+  {
+    title: 'Engineering',
+    items: [
+      { title: 'AI Assistant', href: '/ai-support', icon: MessageSquare },
+      { title: 'P&ID', href: '/process-flow-schematic', icon: Workflow },
+    ],
+  },
+  {
+    title: 'Business',
+    items: [
+      { title: 'Customers', href: '/customers', icon: Briefcase },
+      { title: 'Contracts', href: '/contracts', icon: ScrollText },
+      { title: 'Procurement', href: '/smart-cart', icon: ShoppingCart },
+      { title: 'Proposals', href: '/proposal-builder', icon: FileCheck },
+      { title: 'Inventory', href: '/inventory-monitor', icon: Package },
+    ],
+  },
+  {
+    title: 'Administration',
     items: [
       { title: 'Plants & Assets', href: '/assets', icon: Building2 },
+      { title: 'Knowledge Base', href: '/knowledge', icon: BookOpen },
       { title: 'Reports', href: '/reports', icon: FileText },
       { title: 'Users', href: '/users', icon: Users },
       { title: 'Settings', href: '/settings', icon: Settings },
     ],
   },
-  // Hidden: { title: 'Trends & Analysis', href: '/trends', icon: TrendingUp },
 ];
 
 interface SidebarProps {
@@ -80,7 +116,23 @@ interface SidebarProps {
 
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { user, logout } = useAuth();
+
+  // Build current URL with query params for comparison
+  const currentUrl = searchParams.toString()
+    ? `${pathname}?${searchParams.toString()}`
+    : pathname;
+
+  // Check if a nav item is active (handles both path-only and path+query URLs)
+  const isNavItemActive = (href: string) => {
+    // For URLs with query params, do exact match
+    if (href.includes('?')) {
+      return currentUrl === href;
+    }
+    // For path-only URLs, match only if current URL has no query params or different path
+    return pathname === href && !searchParams.toString();
+  };
 
   const getInitials = (name: string) => {
     return name
@@ -151,16 +203,16 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           {navigation.map((section, sectionIdx) => (
             <div key={section.title} className={cn(sectionIdx > 0 && 'mt-4')}>
               {!collapsed && (
-                <h3 className="mb-1.5 px-2 text-[11px] font-medium text-muted-foreground">
+                <h3 className="mb-1.5 -mx-2 px-4 py-1.5 text-xs font-semibold text-slate-600 uppercase tracking-wider bg-slate-100/80 border-y border-slate-200/60">
                   {section.title}
                 </h3>
               )}
-              {collapsed && sectionIdx > 0 && (
-                <div className="mb-2 h-px mx-2 bg-border" />
+              {collapsed && (
+                <div className="mb-1 mt-1 h-[2px] mx-1 bg-slate-200 rounded-full" />
               )}
               <div className="space-y-0.5">
                 {section.items.map((item) => {
-                  const isActive = pathname === item.href;
+                  const isActive = isNavItemActive(item.href);
                   const Icon = item.icon;
 
                   const linkContent = (
@@ -170,18 +222,18 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                         'group relative flex items-center rounded-md transition-colors duration-150',
                         collapsed ? 'justify-center h-10 w-10 mx-auto' : 'gap-2.5 px-2.5 py-2',
                         isActive
-                          ? 'bg-foreground text-background font-medium'
-                          : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                          ? 'bg-slate-700 text-white font-medium shadow-sm'
+                          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                       )}
                     >
                       <Icon className={cn('shrink-0', collapsed ? 'h-[18px] w-[18px]' : 'h-4 w-4')} />
                       {!collapsed && (
                         <>
-                          <span className="text-[13px]">{item.title}</span>
+                          <span className="text-sm">{item.title}</span>
                           {item.badge && item.badge > 0 && (
                             <span className={cn(
                               'ml-auto flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-medium',
-                              isActive ? 'bg-background/20 text-background' : 'bg-destructive text-white'
+                              isActive ? 'bg-white/20 text-white' : 'bg-red-500 text-white'
                             )}>
                               {item.badge}
                             </span>
@@ -226,7 +278,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                   className="flex w-full items-center justify-center rounded-md p-1.5 transition-colors hover:bg-accent"
                 >
                   <Avatar className="h-8 w-8">
-                    <AvatarFallback className="bg-foreground text-background text-xs font-medium">
+                    <AvatarFallback className="bg-primary text-primary-foreground text-xs font-medium">
                       {getInitials(displayUser.name)}
                     </AvatarFallback>
                   </Avatar>
@@ -243,13 +295,13 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               className="flex w-full items-center gap-2.5 rounded-md p-2 transition-colors hover:bg-accent"
             >
               <Avatar className="h-8 w-8">
-                <AvatarFallback className="bg-foreground text-background text-xs font-medium">
+                <AvatarFallback className="bg-primary text-primary-foreground text-xs font-medium">
                   {getInitials(displayUser.name)}
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1 text-left min-w-0">
-                <p className="text-[13px] font-medium truncate">{displayUser.name}</p>
-                <p className="text-[11px] text-muted-foreground capitalize">{displayUser.role}</p>
+                <p className="text-sm font-medium truncate">{displayUser.name}</p>
+                <p className="text-xs text-muted-foreground capitalize">{displayUser.role}</p>
               </div>
               <LogOut className="h-4 w-4 text-muted-foreground shrink-0" />
             </button>

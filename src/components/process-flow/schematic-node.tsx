@@ -176,22 +176,63 @@ function SchematicNodeComponent({ data, selected }: { data: SchematicNodeData; s
   return (
     <div
       className={cn(
-        'relative flex flex-col items-center gap-1 p-2 rounded-lg transition-all duration-200',
+        'relative flex flex-col items-center gap-1 p-2 transition-all duration-150',
         'hover:scale-105 cursor-pointer',
         selected && 'ring-2 ring-blue-500 ring-offset-2 ring-offset-background',
         isAlarm && 'animate-pulse'
       )}
     >
-      {/* Connection handles */}
+      {/* Connection handles - positioned INSIDE the node so arrows touch the icon */}
       <Handle
         type="target"
         position={Position.Left}
-        className="!w-2 !h-2 !bg-blue-500 !border-2 !border-white !-left-1"
+        style={{
+          width: 8,
+          height: 8,
+          background: 'transparent',
+          border: 'none',
+          left: 12, // Inside the icon box
+          opacity: 0,
+        }}
       />
       <Handle
         type="source"
         position={Position.Right}
-        className="!w-2 !h-2 !bg-blue-500 !border-2 !border-white !-right-1"
+        style={{
+          width: 8,
+          height: 8,
+          background: 'transparent',
+          border: 'none',
+          right: 12, // Inside the icon box
+          opacity: 0,
+        }}
+      />
+      {/* Additional handles for vertical connections */}
+      <Handle
+        type="target"
+        position={Position.Top}
+        id="top"
+        style={{
+          width: 8,
+          height: 8,
+          background: 'transparent',
+          border: 'none',
+          top: 12, // Inside the icon box
+          opacity: 0,
+        }}
+      />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        id="bottom"
+        style={{
+          width: 8,
+          height: 8,
+          background: 'transparent',
+          border: 'none',
+          bottom: 24, // Above the label, inside icon area
+          opacity: 0,
+        }}
       />
 
       {/* Alarm indicator */}
@@ -206,56 +247,48 @@ function SchematicNodeComponent({ data, selected }: { data: SchematicNodeData; s
         </div>
       )}
 
-      {/* Status pulse for running equipment */}
-      {data.status === 'running' && !isAlarm && (
-        <div className="absolute -top-0.5 -right-0.5">
-          <span className="relative flex h-2.5 w-2.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
-          </span>
-        </div>
-      )}
 
-      {/* Equipment Symbol */}
+      {/* Equipment Symbol - Industrial P&ID style with sharp edges (matching Insights page) */}
       <div
         className={cn(
-          'w-12 h-12 flex items-center justify-center rounded-lg border-2 transition-all',
-          colors.bg,
-          isAlarm ? 'border-rose-500 animate-alarm-flash' : 'border-current',
+          'w-12 h-12 flex items-center justify-center border-2 border-slate-300 bg-white transition-all duration-150',
+          isAlarm
+            ? 'border-rose-500 animate-alarm-flash shadow-[0_0_20px_4px_rgba(220,38,38,0.2)]'
+            : 'hover:border-slate-400',
           colors.fill
         )}
       >
         <EquipmentSymbol
           type={data.type}
-          className={cn('w-8 h-8', colors.stroke, colors.fill)}
+          className={cn('w-7 h-7', colors.stroke, colors.fill)}
           valveState={data.valveState}
         />
       </div>
 
-      {/* Label */}
+      {/* Label - Vercel-style typography */}
       <div className="text-center max-w-[80px]">
-        <p className="text-[10px] font-semibold text-foreground truncate leading-tight">
+        <p className="text-xs font-medium text-foreground truncate leading-tight">
           {data.label}
         </p>
 
-        {/* Valve state badge */}
+        {/* Valve state badge - Sharp edges matching Insights page */}
         {isValve && data.valveState && (
           <span className={cn(
-            'inline-block text-[8px] font-bold px-1 py-0.5 rounded uppercase mt-0.5',
-            data.valveState === 'open' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-400' :
-            data.valveState === 'closed' ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-400' :
-            'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-400'
+            'inline-flex items-center justify-center text-[9px] font-bold px-1.5 py-0.5 uppercase mt-1',
+            data.valveState === 'open' && 'bg-emerald-100 text-emerald-700',
+            data.valveState === 'closed' && 'bg-rose-100 text-rose-700',
+            data.valveState === 'partial' && 'bg-amber-100 text-amber-700'
           )}>
             {data.valveState}
           </span>
         )}
 
-        {/* Primary value (optional) */}
+        {/* Primary value - Tabular nums for data */}
         {displayValue && !isValve && (
           <p className={cn(
-            'text-[9px] font-medium mt-0.5 tabular-nums',
-            primaryMetric?.status === 'warning' && 'text-amber-600',
-            primaryMetric?.status === 'critical' && 'text-rose-600',
+            'text-[10px] font-medium mt-0.5 tabular-nums font-mono-data',
+            primaryMetric?.status === 'warning' && 'text-warning',
+            primaryMetric?.status === 'critical' && 'text-danger',
             !primaryMetric?.status && 'text-muted-foreground'
           )}>
             {displayValue}

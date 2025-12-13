@@ -69,14 +69,14 @@ export function FlowChart() {
     <div className="bg-card rounded-lg border border-border">
       {/* Header with time range selector */}
       <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
-        <h3 className="text-[13px] font-semibold">Flow Rate Overview</h3>
+        <h3 className="text-sm font-semibold">Flow Rate Overview</h3>
         <div className="flex items-center gap-1 bg-muted/50 rounded-md p-0.5">
           {(Object.keys(timeRanges) as TimeRangeKey[]).map((range) => (
             <button
               key={range}
               onClick={() => setTimeRange(range)}
               className={cn(
-                'px-3 py-1.5 text-[12px] font-medium rounded transition-colors',
+                'px-3 py-1.5 text-xs font-medium rounded transition-colors',
                 timeRange === range
                   ? 'bg-background text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'

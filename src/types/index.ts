@@ -40,6 +40,8 @@ export interface SensorReading {
   value: number;
 }
 
+export type SensorCommStatus = 'online' | 'stale' | 'offline';
+
 export interface Sensor {
   id: string;
   plantId: string;
@@ -49,7 +51,9 @@ export interface Sensor {
   currentValue: number;
   minThreshold: number;
   maxThreshold: number;
+  setpoint?: number; // Target operational value
   status: SensorStatus;
+  commStatus: SensorCommStatus;
   lastUpdated: Date;
   history: SensorReading[];
 }

@@ -87,19 +87,19 @@ export function PlantHealthMatrix() {
     <div className="bg-card rounded-lg border border-border">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
-        <h3 className="text-[13px] font-semibold">Plant Health Matrix</h3>
+        <h3 className="text-sm font-semibold">Plant Health Matrix</h3>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1.5">
             <span className="h-2.5 w-2.5 rounded-sm bg-emerald-400" />
-            <span className="text-[11px] text-muted-foreground">{totals.good} Good</span>
+            <span className="text-xs text-muted-foreground">{totals.good} Good</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="h-2.5 w-2.5 rounded-sm bg-amber-400" />
-            <span className="text-[11px] text-muted-foreground">{totals.attention} Attention</span>
+            <span className="text-xs text-muted-foreground">{totals.attention} Attention</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="h-2.5 w-2.5 rounded-sm bg-rose-400" />
-            <span className="text-[11px] text-muted-foreground">{totals.issue} Issue</span>
+            <span className="text-xs text-muted-foreground">{totals.issue} Issue</span>
           </div>
         </div>
       </div>
@@ -109,13 +109,13 @@ export function PlantHealthMatrix() {
         <table className="w-full">
           <thead>
             <tr>
-              <th className="text-left text-[11px] font-medium text-muted-foreground uppercase tracking-wide pb-3 pr-4">
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide pb-3 pr-4">
                 Plant
               </th>
               {parameters.map((param) => (
                 <th
                   key={param.key}
-                  className="text-center text-[11px] font-medium text-muted-foreground uppercase tracking-wide pb-3 px-2"
+                  className="text-center text-xs font-medium text-muted-foreground uppercase tracking-wide pb-3 px-2"
                 >
                   {param.label}
                 </th>
@@ -126,7 +126,7 @@ export function PlantHealthMatrix() {
             {plantStatuses.map((plant, idx) => (
               <tr key={plant.plantId} className={idx % 2 === 0 ? '' : 'bg-muted/30'}>
                 <td className="py-2.5 pr-4">
-                  <span className="text-[12px] font-medium">{plant.plantName}</span>
+                  <span className="text-xs font-medium">{plant.plantName}</span>
                 </td>
                 {parameters.map((param) => {
                   const status = plant[param.key as keyof ParameterStatus] as 'good' | 'attention' | 'issue';

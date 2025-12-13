@@ -1,9 +1,8 @@
 'use client';
 
-import { useCallback, useState, useMemo, useEffect } from 'react';
+import { useCallback, useState, useMemo, useEffect, useRef } from 'react';
 import {
   ReactFlow,
-  Controls,
   MiniMap,
   Background,
   BackgroundVariant,
@@ -12,13 +11,17 @@ import {
   addEdge,
   MarkerType,
   Panel,
+  useReactFlow,
+  ReactFlowProvider,
+  reconnectEdge,
 } from '@xyflow/react';
-import type { Connection, Edge, Node } from '@xyflow/react';
+import type { Connection, Edge, Node, OnReconnect } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { SchematicNode, SchematicNodeData, EquipmentType, EquipmentMetric } from './schematic-node';
 import { Button } from '@/components/ui/button';
 import {
   Plus,
+  Minus,
   Trash2,
   Save,
   Lock,
@@ -33,8 +36,8 @@ import {
   ArrowRight,
   Play,
   Pause,
-  ZoomIn,
-  ZoomOut,
+  Maximize2,
+  Link2Off,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -320,30 +323,30 @@ const createInitialNodes = (): Node<SchematicNodeData>[] => [
   },
 ];
 
-// Initial edges with better styling for schematic view
+// Initial edges with better styling for schematic view - using smoothstep for orthogonal P&ID routing
 const initialEdges: Edge[] = [
-  // Main process flow - thicker blue lines
-  { id: 'e-inlet-screen', source: 'inlet-1', target: 'screen-1', animated: true, style: { stroke: '#0066ff', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#0066ff' } },
-  { id: 'e-screen-pump', source: 'screen-1', target: 'pump-1', animated: true, style: { stroke: '#0066ff', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#0066ff' } },
-  { id: 'e-pump-tank1', source: 'pump-1', target: 'tank-1', animated: true, style: { stroke: '#0066ff', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#0066ff' } },
-  { id: 'e-tank1-tank2', source: 'tank-1', target: 'tank-2', animated: true, style: { stroke: '#0066ff', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#0066ff' } },
-  { id: 'e-tank2-tank3', source: 'tank-2', target: 'tank-3', animated: true, style: { stroke: '#0066ff', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#0066ff' } },
-  { id: 'e-tank3-filter', source: 'tank-3', target: 'filter-1', animated: true, style: { stroke: '#0066ff', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#0066ff' } },
-  { id: 'e-filter-tank4', source: 'filter-1', target: 'tank-4', animated: true, style: { stroke: '#0066ff', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#0066ff' } },
-  { id: 'e-tank4-pump2', source: 'tank-4', target: 'pump-2', animated: true, style: { stroke: '#0066ff', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#0066ff' } },
-  { id: 'e-pump2-outlet', source: 'pump-2', target: 'outlet-1', animated: true, style: { stroke: '#0066ff', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#0066ff' } },
+  // Main process flow - thicker blue lines with smoothstep for proper orthogonal routing
+  { id: 'e-inlet-screen', source: 'inlet-1', target: 'screen-1', type: 'smoothstep', animated: true, style: { stroke: '#0066ff', strokeWidth: 3 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#0066ff', width: 20, height: 20 } },
+  { id: 'e-screen-pump', source: 'screen-1', target: 'pump-1', type: 'smoothstep', animated: true, style: { stroke: '#0066ff', strokeWidth: 3 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#0066ff', width: 20, height: 20 } },
+  { id: 'e-pump-tank1', source: 'pump-1', target: 'tank-1', type: 'smoothstep', animated: true, style: { stroke: '#0066ff', strokeWidth: 3 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#0066ff', width: 20, height: 20 } },
+  { id: 'e-tank1-tank2', source: 'tank-1', target: 'tank-2', type: 'smoothstep', animated: true, style: { stroke: '#0066ff', strokeWidth: 3 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#0066ff', width: 20, height: 20 } },
+  { id: 'e-tank2-tank3', source: 'tank-2', target: 'tank-3', type: 'smoothstep', animated: true, style: { stroke: '#0066ff', strokeWidth: 3 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#0066ff', width: 20, height: 20 } },
+  { id: 'e-tank3-filter', source: 'tank-3', target: 'filter-1', type: 'smoothstep', animated: true, style: { stroke: '#0066ff', strokeWidth: 3 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#0066ff', width: 20, height: 20 } },
+  { id: 'e-filter-tank4', source: 'filter-1', target: 'tank-4', type: 'smoothstep', animated: true, style: { stroke: '#0066ff', strokeWidth: 3 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#0066ff', width: 20, height: 20 } },
+  { id: 'e-tank4-pump2', source: 'tank-4', target: 'pump-2', type: 'smoothstep', animated: true, style: { stroke: '#0066ff', strokeWidth: 3 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#0066ff', width: 20, height: 20 } },
+  { id: 'e-pump2-outlet', source: 'pump-2', target: 'outlet-1', type: 'smoothstep', animated: true, style: { stroke: '#0066ff', strokeWidth: 3 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#0066ff', width: 20, height: 20 } },
 
-  // Chemical dosing - green
-  { id: 'e-chem1-tank1', source: 'chemical-1', target: 'tank-1', animated: true, style: { stroke: '#10b981', strokeWidth: 3 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#10b981' } },
-  { id: 'e-chem2-tank4', source: 'chemical-2', target: 'tank-4', animated: true, style: { stroke: '#10b981', strokeWidth: 3 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#10b981' } },
+  // Chemical dosing - green with smoothstep for vertical connections
+  { id: 'e-chem1-tank1', source: 'chemical-1', target: 'tank-1', type: 'smoothstep', animated: true, style: { stroke: '#10b981', strokeWidth: 2 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#10b981', width: 16, height: 16 } },
+  { id: 'e-chem2-tank4', source: 'chemical-2', target: 'tank-4', type: 'smoothstep', animated: true, style: { stroke: '#10b981', strokeWidth: 2 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#10b981', width: 16, height: 16 } },
 
   // Sensor connections - dashed gray
-  { id: 'e-tank3-sensor', source: 'tank-3', target: 'sensor-1', style: { stroke: '#94a3b8', strokeWidth: 2, strokeDasharray: '5,5' } },
-  { id: 'e-pump2-sensor2', source: 'pump-2', target: 'sensor-2', style: { stroke: '#94a3b8', strokeWidth: 2, strokeDasharray: '5,5' } },
+  { id: 'e-tank3-sensor', source: 'tank-3', target: 'sensor-1', type: 'smoothstep', style: { stroke: '#94a3b8', strokeWidth: 1.5, strokeDasharray: '4,4' } },
+  { id: 'e-pump2-sensor2', source: 'pump-2', target: 'sensor-2', type: 'smoothstep', style: { stroke: '#94a3b8', strokeWidth: 1.5, strokeDasharray: '4,4' } },
 
   // Valve connections - orange
-  { id: 'e-inlet-valve1', source: 'inlet-1', target: 'valve-1', style: { stroke: '#f59e0b', strokeWidth: 2 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#f59e0b' } },
-  { id: 'e-tank3-valve2', source: 'tank-3', target: 'valve-2', style: { stroke: '#f59e0b', strokeWidth: 2 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#f59e0b' } },
+  { id: 'e-inlet-valve1', source: 'inlet-1', target: 'valve-1', type: 'smoothstep', style: { stroke: '#f59e0b', strokeWidth: 2 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#f59e0b', width: 16, height: 16 } },
+  { id: 'e-tank3-valve2', source: 'tank-3', target: 'valve-2', type: 'smoothstep', style: { stroke: '#f59e0b', strokeWidth: 2 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#f59e0b', width: 16, height: 16 } },
 ];
 
 // Valve icon for dropdown
@@ -440,16 +443,69 @@ const getPrimaryValue = (type: EquipmentType, metrics: EquipmentMetric[]): strin
   return `${m.value} ${m.unit}`;
 };
 
-interface SchematicCanvasProps {
-  onNodeSelect?: (node: Node<SchematicNodeData> | null) => void;
+// Toolbar state interface for external control
+export interface SchematicToolbarState {
+  isLocked: boolean;
+  isSimulating: boolean;
+  selectedNode: Node<SchematicNodeData> | null;
+  selectedEdge: Edge | null;
+  zoomLevel: number;
+  stats: { running: number; warning: number; offline: number; alarms: number; total: number };
 }
 
-export function SchematicCanvas({ onNodeSelect }: SchematicCanvasProps) {
+export interface SchematicToolbarActions {
+  setIsLocked: (locked: boolean) => void;
+  setIsSimulating: (simulating: boolean) => void;
+  addNode: (type: EquipmentType) => void;
+  deleteSelected: () => void;
+  deleteSelectedEdge: () => void;
+  toggleValve: () => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
+  fitView: () => void;
+  updateNode: (nodeId: string, data: Partial<SchematicNodeData>) => void;
+}
+
+interface SchematicCanvasProps {
+  onNodeSelect?: (node: Node<SchematicNodeData> | null) => void;
+  onToolbarStateChange?: (state: SchematicToolbarState, actions: SchematicToolbarActions) => void;
+  showToolbar?: boolean; // Whether to show the internal toolbar (default: true for backwards compatibility)
+}
+
+function SchematicCanvasInner({ onNodeSelect, onToolbarStateChange, showToolbar = true }: SchematicCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState(createInitialNodes());
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [isLocked, setIsLocked] = useState(false);
   const [isSimulating, setIsSimulating] = useState(true);
   const [selectedNode, setSelectedNode] = useState<Node<SchematicNodeData> | null>(null);
+  const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null);
+
+  // React Flow instance for zoom controls and viewport
+  const { zoomIn, zoomOut, fitView, getZoom, getViewport, screenToFlowPosition } = useReactFlow();
+  const [zoomLevel, setZoomLevel] = useState(1);
+
+  // Refs to hold latest values for stable callbacks
+  const selectedNodeRef = useRef<Node<SchematicNodeData> | null>(null);
+  const selectedEdgeRef = useRef<Edge | null>(null);
+  const isLockedRef = useRef(false);
+
+  // Keep refs in sync
+  useEffect(() => {
+    selectedNodeRef.current = selectedNode;
+  }, [selectedNode]);
+
+  useEffect(() => {
+    selectedEdgeRef.current = selectedEdge;
+  }, [selectedEdge]);
+
+  useEffect(() => {
+    isLockedRef.current = isLocked;
+  }, [isLocked]);
+
+  // Update zoom level display when view changes
+  const handleMoveEnd = useCallback(() => {
+    setZoomLevel(getZoom());
+  }, [getZoom]);
 
   // Real-time simulation
   useEffect(() => {
@@ -497,9 +553,10 @@ export function SchematicCanvas({ onNodeSelect }: SchematicCanvasProps) {
       const edge: Edge = {
         ...connection,
         id: `e-${connection.source}-${connection.target}`,
+        type: 'smoothstep', // Orthogonal routing for P&ID schematics
         animated: true,
-        style: { stroke: '#0066ff', strokeWidth: 4 },
-        markerEnd: { type: MarkerType.ArrowClosed, color: '#0066ff' },
+        style: { stroke: '#0066ff', strokeWidth: 3 },
+        markerEnd: { type: MarkerType.ArrowClosed, color: '#0066ff', width: 20, height: 20 },
       } as Edge;
       setEdges((eds) => addEdge(edge, eds));
     },
@@ -516,17 +573,74 @@ export function SchematicCanvas({ onNodeSelect }: SchematicCanvasProps) {
 
   const onPaneClick = useCallback(() => {
     setSelectedNode(null);
+    setSelectedEdge(null);
     onNodeSelect?.(null);
   }, [onNodeSelect]);
 
+  // Edge click handler - select edge for deletion
+  const onEdgeClick = useCallback(
+    (_: React.MouseEvent, edge: Edge) => {
+      if (isLocked) return;
+      setSelectedEdge(edge);
+      setSelectedNode(null);
+      onNodeSelect?.(null);
+    },
+    [isLocked, onNodeSelect]
+  );
+
+  // Edge reconnection handler - drag edge to new node
+  const onReconnect: OnReconnect = useCallback(
+    (oldEdge, newConnection) => {
+      if (isLocked) return;
+      setEdges((eds) => reconnectEdge(oldEdge, newConnection, eds));
+    },
+    [isLocked, setEdges]
+  );
+
+  // Delete selected edge - uses refs for stable callback
+  const deleteSelectedEdge = useCallback(() => {
+    if (isLockedRef.current || !selectedEdgeRef.current) return;
+    const edgeId = selectedEdgeRef.current.id;
+    setEdges((eds) => eds.filter((e) => e.id !== edgeId));
+    setSelectedEdge(null);
+  }, [setEdges]);
+
+  // Keyboard handler for Delete key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedEdge && !isLocked) {
+          e.preventDefault();
+          deleteSelectedEdge();
+        }
+      }
+      if (e.key === 'Escape') {
+        setSelectedEdge(null);
+        setSelectedNode(null);
+        onNodeSelect?.(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedEdge, isLocked, deleteSelectedEdge, onNodeSelect]);
+
+  // Add node at viewport center and auto-select it (visually only, no dialog)
   const addNode = useCallback(
     (type: EquipmentType) => {
       const id = `${type}-${Date.now()}`;
       const metrics = getDefaultMetrics(type);
+
+      // Get viewport center position in flow coordinates
+      const centerPosition = screenToFlowPosition({
+        x: window.innerWidth / 2,
+        y: window.innerHeight / 2
+      });
+
       const newNode: Node<SchematicNodeData> = {
         id,
         type: 'schematic',
-        position: { x: 400, y: 200 },
+        position: { x: centerPosition.x - 30, y: centerPosition.y - 40 }, // Offset to center the node
+        selected: true, // Auto-select the new node (visual highlight only)
         data: {
           label: getDefaultLabel(type, id),
           type,
@@ -537,32 +651,44 @@ export function SchematicCanvas({ onNodeSelect }: SchematicCanvasProps) {
           primaryValue: getPrimaryValue(type, metrics),
         },
       };
-      setNodes((nds) => [...nds, newNode]);
+
+      // Deselect all existing nodes, add new node as selected
+      setNodes((nds) => [
+        ...nds.map(n => ({ ...n, selected: false })),
+        newNode
+      ]);
+
+      // Update internal state but DON'T trigger dialog (don't call onNodeSelect)
+      setSelectedNode(newNode);
     },
-    [setNodes]
+    [setNodes, screenToFlowPosition]
   );
 
+  // Delete selected node - uses refs for stable callback
   const deleteSelected = useCallback(() => {
-    if (isLocked || !selectedNode) return;
-    setNodes((nds) => nds.filter((n) => n.id !== selectedNode.id));
-    setEdges((eds) => eds.filter((e) => e.source !== selectedNode.id && e.target !== selectedNode.id));
+    if (isLockedRef.current || !selectedNodeRef.current) return;
+    const nodeId = selectedNodeRef.current.id;
+    setNodes((nds) => nds.filter((n) => n.id !== nodeId));
+    setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId));
     setSelectedNode(null);
     onNodeSelect?.(null);
-  }, [isLocked, selectedNode, setNodes, setEdges, onNodeSelect]);
+  }, [setNodes, setEdges, onNodeSelect]);
 
+  // Toggle valve state - uses refs for stable callback
   const toggleValve = useCallback(() => {
-    if (!selectedNode || selectedNode.data.type !== 'valve') return;
+    const node = selectedNodeRef.current;
+    if (!node || node.data.type !== 'valve') return;
 
     setNodes((nds) =>
-      nds.map((node) => {
-        if (node.id !== selectedNode.id) return node;
-        const currentState = node.data.valveState;
+      nds.map((n) => {
+        if (n.id !== node.id) return n;
+        const currentState = n.data.valveState;
         const newState = currentState === 'open' ? 'closed' : currentState === 'closed' ? 'partial' : 'open';
         const newStatus = newState === 'closed' ? 'idle' : 'running';
         return {
-          ...node,
+          ...n,
           data: {
-            ...node.data,
+            ...n.data,
             valveState: newState,
             status: newStatus,
             metrics: [{ label: 'Position', value: newState === 'open' ? '100' : newState === 'closed' ? '0' : '50', unit: '%', status: 'normal' as const }],
@@ -570,7 +696,31 @@ export function SchematicCanvas({ onNodeSelect }: SchematicCanvasProps) {
         };
       })
     );
-  }, [selectedNode, setNodes]);
+  }, [setNodes]);
+
+  // Update node data - for editing node properties from modal
+  const updateNode = useCallback(
+    (nodeId: string, newData: Partial<SchematicNodeData>) => {
+      setNodes((nds) =>
+        nds.map((n) => {
+          if (n.id !== nodeId) return n;
+          const updatedNode = {
+            ...n,
+            data: {
+              ...n.data,
+              ...newData,
+            },
+          };
+          // Also update selectedNode if this is the selected one
+          if (selectedNodeRef.current?.id === nodeId) {
+            setSelectedNode(updatedNode);
+          }
+          return updatedNode;
+        })
+      );
+    },
+    [setNodes]
+  );
 
   // Stats
   const stats = useMemo(() => {
@@ -581,31 +731,83 @@ export function SchematicCanvas({ onNodeSelect }: SchematicCanvasProps) {
     return { running, warning, offline, alarms, total: nodes.length };
   }, [nodes]);
 
+  // Stable actions object - created once, never changes
+  const toolbarActionsRef = useRef<SchematicToolbarActions | null>(null);
+
+  // Initialize actions ref once after first render
+  useEffect(() => {
+    toolbarActionsRef.current = {
+      setIsLocked,
+      setIsSimulating,
+      addNode,
+      deleteSelected,
+      deleteSelectedEdge,
+      toggleValve,
+      zoomIn,
+      zoomOut,
+      fitView: () => fitView({ padding: 0.2, duration: 300 }),
+      updateNode,
+    };
+  }, [addNode, deleteSelected, deleteSelectedEdge, toggleValve, zoomIn, zoomOut, fitView, updateNode]);
+
+  // Store onToolbarStateChange in ref to avoid it as a dependency
+  const onToolbarStateChangeRef = useRef(onToolbarStateChange);
+  useEffect(() => {
+    onToolbarStateChangeRef.current = onToolbarStateChange;
+  }, [onToolbarStateChange]);
+
+  // Expose toolbar state to parent - only triggers when state values change
+  useEffect(() => {
+    if (onToolbarStateChangeRef.current && toolbarActionsRef.current) {
+      const state: SchematicToolbarState = {
+        isLocked,
+        isSimulating,
+        selectedNode,
+        selectedEdge,
+        zoomLevel,
+        stats,
+      };
+      onToolbarStateChangeRef.current(state, toolbarActionsRef.current);
+    }
+  }, [isLocked, isSimulating, selectedNode, selectedEdge, zoomLevel, stats]);
+
   return (
     <div className="h-full w-full">
       <ReactFlow
         nodes={nodes}
-        edges={edges}
+        edges={edges.map((e) => ({
+          ...e,
+          // Highlight selected edge
+          style: {
+            ...e.style,
+            stroke: selectedEdge?.id === e.id ? '#ef4444' : (e.style?.stroke || '#0066ff'),
+            strokeWidth: selectedEdge?.id === e.id ? 5 : (e.style?.strokeWidth || 4),
+          },
+        }))}
         onNodesChange={isLocked ? undefined : onNodesChange}
         onEdgesChange={isLocked ? undefined : onEdgesChange}
         onConnect={onConnect}
         onNodeClick={onNodeClick}
+        onEdgeClick={onEdgeClick}
         onPaneClick={onPaneClick}
+        onReconnect={onReconnect}
+        onMoveEnd={handleMoveEnd}
         nodeTypes={nodeTypes}
         fitView
         snapToGrid
         snapGrid={[10, 10]}
-        minZoom={0.3}
-        maxZoom={3}
+        minZoom={0.2}
+        maxZoom={4}
+        edgesReconnectable={!isLocked}
         defaultEdgeOptions={{
+          type: 'smoothstep', // Orthogonal routing for P&ID schematics
           animated: true,
-          style: { stroke: '#0066ff', strokeWidth: 4 },
-          markerEnd: { type: MarkerType.ArrowClosed, color: '#0066ff' },
+          style: { stroke: '#0066ff', strokeWidth: 3 },
+          markerEnd: { type: MarkerType.ArrowClosed, color: '#0066ff', width: 20, height: 20 },
         }}
         proOptions={{ hideAttribution: true }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#e2e8f0" />
-        <Controls showInteractive={false} />
+        <Background variant={BackgroundVariant.Dots} gap={20} size={2} color="#cbd5e1" />
         <MiniMap
           nodeColor={(node: Node<SchematicNodeData>) => {
             if (node.data.hasActiveAlarm) return '#dc2626';
@@ -621,92 +823,153 @@ export function SchematicCanvas({ onNodeSelect }: SchematicCanvasProps) {
           className="!bg-card !border !border-border !rounded-lg"
         />
 
-        {/* Top toolbar */}
-        <Panel position="top-left" className="flex items-center gap-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="default" disabled={isLocked}>
-                <Plus className="h-4 w-4 mr-1" />
-                Add
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-48">
-              <DropdownMenuLabel>Equipment Type</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {equipmentOptions.map((opt) => {
-                const Icon = opt.icon;
-                return (
-                  <DropdownMenuItem key={opt.type} onClick={() => addNode(opt.type)}>
-                    <Icon className="h-4 w-4 mr-2" />
-                    {opt.label}
-                  </DropdownMenuItem>
-                );
-              })}
-            </DropdownMenuContent>
-          </DropdownMenu>
+        {/* Top toolbar - conditionally shown */}
+        {showToolbar && (
+          <Panel position="top-left" className="flex items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="default" disabled={isLocked}>
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-48">
+                <DropdownMenuLabel>Equipment Type</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {equipmentOptions.map((opt) => {
+                  const Icon = opt.icon;
+                  return (
+                    <DropdownMenuItem key={opt.type} onClick={() => addNode(opt.type)}>
+                      <Icon className="h-4 w-4 mr-2" />
+                      {opt.label}
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-          <Button size="sm" variant="outline" onClick={deleteSelected} disabled={isLocked || !selectedNode}>
-            <Trash2 className="h-4 w-4" />
-          </Button>
+            <Button size="sm" variant="outline" onClick={deleteSelected} disabled={isLocked || !selectedNode} title="Delete Node">
+              <Trash2 className="h-4 w-4" />
+            </Button>
 
-          {selectedNode?.data.type === 'valve' && (
+            {/* Delete selected edge/connection */}
             <Button
               size="sm"
               variant="outline"
-              onClick={toggleValve}
-              disabled={isLocked}
-              className="border-amber-500 text-amber-600 hover:bg-amber-50"
+              onClick={deleteSelectedEdge}
+              disabled={isLocked || !selectedEdge}
+              title="Delete Connection"
+              className={selectedEdge ? 'border-red-500 text-red-600' : ''}
             >
-              <ValveIcon className="h-4 w-4" />
+              <Link2Off className="h-4 w-4" />
             </Button>
-          )}
 
-          <div className="h-6 w-px bg-border mx-1" />
+            {selectedNode?.data.type === 'valve' && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={toggleValve}
+                disabled={isLocked}
+                className="border-amber-500 text-amber-600 hover:bg-amber-50"
+              >
+                <ValveIcon className="h-4 w-4" />
+              </Button>
+            )}
 
-          <Button
-            size="sm"
-            variant={isSimulating ? 'default' : 'outline'}
-            onClick={() => setIsSimulating(!isSimulating)}
-            className={isSimulating ? 'bg-emerald-600 hover:bg-emerald-700' : ''}
-          >
-            {isSimulating ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-          </Button>
+            <div className="h-6 w-px bg-border mx-1" />
 
-          <Button
-            size="sm"
-            variant={isLocked ? 'default' : 'outline'}
-            onClick={() => setIsLocked(!isLocked)}
-          >
-            {isLocked ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
-          </Button>
+            <Button
+              size="sm"
+              variant={isSimulating ? 'default' : 'outline'}
+              onClick={() => setIsSimulating(!isSimulating)}
+              className={isSimulating ? 'bg-emerald-600 hover:bg-emerald-700' : ''}
+            >
+              {isSimulating ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+            </Button>
 
-          <Button size="sm" variant="outline">
-            <Save className="h-4 w-4" />
-          </Button>
-        </Panel>
+            <Button
+              size="sm"
+              variant={isLocked ? 'default' : 'outline'}
+              onClick={() => setIsLocked(!isLocked)}
+            >
+              {isLocked ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
+            </Button>
 
-        {/* Status legend */}
-        <Panel position="top-right" className="flex items-center gap-3 bg-card/90 backdrop-blur-sm border border-border rounded-lg px-3 py-2">
-          {stats.alarms > 0 && (
-            <div className="flex items-center gap-1.5 pr-3 border-r border-border">
-              <span className="h-2.5 w-2.5 rounded-full bg-rose-600 animate-pulse" />
-              <span className="text-[11px] font-semibold text-rose-600">
-                {stats.alarms} Alarm{stats.alarms > 1 ? 's' : ''}
+            <Button size="sm" variant="outline" title="Save Layout">
+              <Save className="h-4 w-4" />
+            </Button>
+
+            <div className="h-6 w-px bg-border mx-1" />
+
+            {/* Zoom Controls */}
+            <div className="flex items-center gap-1 bg-muted/50 rounded-md px-1">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => zoomOut()}
+                className="h-7 w-7 p-0"
+                title="Zoom Out"
+              >
+                <Minus className="h-3.5 w-3.5" />
+              </Button>
+              <span className="text-[10px] font-medium text-muted-foreground w-10 text-center tabular-nums">
+                {Math.round(zoomLevel * 100)}%
               </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => zoomIn()}
+                className="h-7 w-7 p-0"
+                title="Zoom In"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </Button>
             </div>
-          )}
-          <div className="flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" />
-            <span className="text-[11px]">{stats.running}</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-amber-500" />
-            <span className="text-[11px]">{stats.warning}</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-rose-500" />
-            <span className="text-[11px]">{stats.offline}</span>
-          </div>
+
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => fitView({ padding: 0.2, duration: 300 })}
+              title="Fit to View"
+            >
+              <Maximize2 className="h-4 w-4" />
+            </Button>
+          </Panel>
+        )}
+
+        {/* Horizontal Zoom Controls - bottom right */}
+        <Panel position="bottom-right" className="flex items-center gap-1 bg-white border border-slate-200 rounded px-1 py-0.5">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => zoomOut()}
+            className="h-6 w-6 p-0"
+            title="Zoom Out"
+          >
+            <Minus className="h-3.5 w-3.5" />
+          </Button>
+          <span className="text-[10px] font-mono text-slate-600 w-9 text-center tabular-nums">
+            {Math.round(zoomLevel * 100)}%
+          </span>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => zoomIn()}
+            className="h-6 w-6 p-0"
+            title="Zoom In"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </Button>
+          <div className="h-4 w-px bg-slate-200 mx-0.5" />
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => fitView({ padding: 0.2, duration: 300 })}
+            className="h-6 w-6 p-0"
+            title="Fit to View"
+          >
+            <Maximize2 className="h-3.5 w-3.5" />
+          </Button>
         </Panel>
 
         {/* Flow legend */}
@@ -734,14 +997,41 @@ export function SchematicCanvas({ onNodeSelect }: SchematicCanvasProps) {
         {/* Instructions */}
         <Panel position="bottom-center" className="bg-card/90 backdrop-blur-sm border border-border rounded-lg px-4 py-1.5">
           <p className="text-[10px] text-muted-foreground">
-            <span className="font-medium text-foreground">Click</span> for details
+            <span className="font-medium text-foreground">Click node</span> for details
             <span className="mx-2">•</span>
-            <span className="font-medium text-foreground">Drag</span> to move
+            <span className="font-medium text-foreground">Click line</span> to select & delete
             <span className="mx-2">•</span>
-            <span className="font-medium text-foreground">Connect</span> from handles
+            <span className="font-medium text-foreground">Drag line end</span> to reconnect
+            <span className="mx-2">•</span>
+            <span className="font-medium text-foreground">Drag from edge</span> to connect
           </p>
         </Panel>
+
+        {/* Selected edge indicator - shows above zoom controls */}
+        {selectedEdge && (
+          <Panel position="top-right" className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded px-3 py-1.5">
+            <p className="text-[10px] text-red-700 dark:text-red-400 font-medium">
+              Press <kbd className="px-1 py-0.5 bg-red-100 dark:bg-red-900/50 rounded text-[9px]">Delete</kbd> to remove connection
+            </p>
+          </Panel>
+        )}
       </ReactFlow>
     </div>
   );
 }
+
+// Wrapper component with ReactFlowProvider for zoom controls
+export function SchematicCanvas({ onNodeSelect, onToolbarStateChange, showToolbar = true }: SchematicCanvasProps) {
+  return (
+    <ReactFlowProvider>
+      <SchematicCanvasInner
+        onNodeSelect={onNodeSelect}
+        onToolbarStateChange={onToolbarStateChange}
+        showToolbar={showToolbar}
+      />
+    </ReactFlowProvider>
+  );
+}
+
+// Export equipment options for external toolbar
+export { equipmentOptions };

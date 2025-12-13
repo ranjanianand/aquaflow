@@ -73,16 +73,16 @@ export function MultiParamChart() {
     <div className="bg-card rounded-lg border border-border">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
-        <h3 className="text-[13px] font-semibold">Multi-Parameter Trends</h3>
+        <h3 className="text-sm font-semibold">Multi-Parameter Trends</h3>
         <div className="flex items-center gap-2">
           {parameters.map((param) => (
             <button
               key={param.key}
               onClick={() => toggleParam(param.key)}
               className={cn(
-                'px-2.5 py-1 text-[11px] font-medium rounded-md border transition-all',
+                'px-2.5 py-1 text-xs font-medium rounded-md border transition-all',
                 activeParams.includes(param.key)
-                  ? 'border-foreground/20 bg-foreground text-background'
+                  ? 'border-primary/20 bg-primary text-primary-foreground'
                   : 'border-border bg-transparent text-muted-foreground hover:bg-muted'
               )}
             >

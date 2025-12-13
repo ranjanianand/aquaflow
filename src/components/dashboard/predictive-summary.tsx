@@ -71,7 +71,7 @@ function EquipmentItem({ equipment }: EquipmentItemProps) {
       {/* Header: Name and Badge */}
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="min-w-0 flex-1">
-          <p className="text-[12px] font-semibold truncate">{equipment.name}</p>
+          <p className="text-xs font-semibold truncate">{equipment.name}</p>
           <p className="text-[10px] text-muted-foreground truncate">{equipment.plantName}</p>
         </div>
         <span className={cn('text-[9px] font-semibold px-1.5 py-0.5 rounded uppercase flex-shrink-0', styles.badge)}>
@@ -83,7 +83,7 @@ function EquipmentItem({ equipment }: EquipmentItemProps) {
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-1">
           <Clock className="h-3 w-3 text-muted-foreground" />
-          <span className={cn('text-[11px] font-medium', styles.text)}>
+          <span className={cn('text-xs font-medium', styles.text)}>
             {equipment.daysRemaining} days remaining
           </span>
         </div>
@@ -120,7 +120,7 @@ export function PredictiveSummary() {
             <div className="p-1.5 rounded-md bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400">
               <Cpu className="h-4 w-4" strokeWidth={1.75} />
             </div>
-            <h3 className="text-[13px] font-semibold">Predictive Maintenance</h3>
+            <h3 className="text-sm font-semibold">Predictive Maintenance</h3>
           </div>
           <div className="flex items-center gap-3">
             {/* Summary Stats inline */}
@@ -128,7 +128,7 @@ export function PredictiveSummary() {
               {criticalCount > 0 && (
                 <div className="flex items-center gap-1">
                   <AlertTriangle className="h-3.5 w-3.5 text-rose-500" />
-                  <span className="text-[11px] font-medium text-rose-600 dark:text-rose-400">
+                  <span className="text-xs font-medium text-rose-600 dark:text-rose-400">
                     {criticalCount}
                   </span>
                 </div>
@@ -136,19 +136,19 @@ export function PredictiveSummary() {
               {warningCount > 0 && (
                 <div className="flex items-center gap-1">
                   <Clock className="h-3.5 w-3.5 text-amber-500" />
-                  <span className="text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                  <span className="text-xs font-medium text-amber-600 dark:text-amber-400">
                     {warningCount}
                   </span>
                 </div>
               )}
               <div className="flex items-center gap-1">
                 <Wrench className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-[11px] text-muted-foreground">
+                <span className="text-xs text-muted-foreground">
                   {equipmentNeedingAttention.length}
                 </span>
               </div>
             </div>
-            <Link href="/predictive" className="text-[11px] text-primary hover:underline flex items-center gap-0.5">
+            <Link href="/predictive" className="text-xs text-primary hover:underline flex items-center gap-0.5">
               View All
               <ArrowRight className="h-3 w-3" />
             </Link>
@@ -168,7 +168,7 @@ export function PredictiveSummary() {
               <Cpu className="h-4 w-4 text-emerald-500" />
             </div>
             <div>
-              <p className="text-[12px] font-medium text-emerald-600 dark:text-emerald-400">All Systems Healthy</p>
+              <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400">All Systems Healthy</p>
               <p className="text-[10px] text-muted-foreground">No equipment needs attention</p>
             </div>
           </div>
