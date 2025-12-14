@@ -12,8 +12,8 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       <div className="min-h-screen flex flex-col items-center justify-center bg-background">
         <div className="flex items-center gap-3 mb-4">
           <Image
-            src="/yozy-logo.png"
-            alt="YOZY"
+            src="/mwts-logo.png"
+            alt="MWTS"
             width={40}
             height={40}
             className="h-10 w-10 object-contain"
@@ -34,8 +34,8 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       <div className="min-h-screen flex flex-col items-center justify-center bg-background">
         <div className="flex items-center gap-3 mb-4">
           <Image
-            src="/yozy-logo.png"
-            alt="YOZY"
+            src="/mwts-logo.png"
+            alt="MWTS"
             width={40}
             height={40}
             className="h-10 w-10 object-contain"

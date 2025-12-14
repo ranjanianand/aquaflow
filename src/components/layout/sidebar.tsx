@@ -166,8 +166,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                   className="flex flex-col items-center gap-0.5 text-muted-foreground hover:text-foreground transition-colors"
                 >
                   <Image
-                    src="/yozy-logo.png"
-                    alt="YOZY"
+                    src="/mwts-logo.png"
+                    alt="MWTS"
                     width={32}
                     height={32}
                     className="h-8 w-8 object-contain"
@@ -182,8 +182,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           ) : (
             <>
               <Image
-                src="/yozy-logo.png"
-                alt="YOZY"
+                src="/mwts-logo.png"
+                alt="MWTS"
                 width={40}
                 height={40}
                 className="h-9 w-auto object-contain"

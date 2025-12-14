@@ -69,8 +69,8 @@ export default function LoginPage() {
             <div className="relative mb-3">
               <div className="absolute inset-0 bg-white/20 rounded-full blur-xl animate-pulse" />
               <Image
-                src="/yozy-logo.png"
-                alt="YOZY"
+                src="/mwts-logo.png"
+                alt="MWTS"
                 width={72}
                 height={72}
                 className="h-18 w-18 object-contain relative z-10 drop-shadow-lg"
@@ -185,8 +185,8 @@ export default function LoginPage() {
             <div className="relative mb-2">
               <div className="absolute inset-0 bg-slate-200 rounded-full blur-xl" />
               <Image
-                src="/yozy-logo.png"
-                alt="YOZY"
+                src="/mwts-logo.png"
+                alt="MWTS"
                 width={64}
                 height={64}
                 className="h-16 w-16 object-contain relative z-10"
