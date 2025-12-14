@@ -14,6 +14,13 @@ import {
   DialogContent,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { mockPlants, getOnlinePlantsCount, getTotalSensorCount } from '@/data/mock-plants';
 import { mockSensors, getSensorsByPlant, getSensorsByStatus } from '@/data/mock-sensors';
 import {
@@ -1147,12 +1154,37 @@ export default function AssetsPage() {
                         </span>
                       </TableCell>
                       <TableCell className="text-right">
-                        <button
-                          onClick={() => toast.info('Work order details coming soon')}
-                          className="px-3 py-1.5 border-2 border-slate-300 text-[10px] font-bold uppercase tracking-wider text-slate-600 hover:bg-slate-100 transition-colors"
-                        >
-                          View
-                        </button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button className="p-1.5 hover:bg-slate-100 transition-colors border border-slate-300">
+                              <MoreVertical className="h-4 w-4 text-slate-600" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-40">
+                            <DropdownMenuItem onClick={() => toast.info('View work order details')}>
+                              <Eye className="h-3.5 w-3.5 mr-2" />
+                              View Details
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => toast.info('Edit maintenance schedule')}>
+                              <Edit className="h-3.5 w-3.5 mr-2" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => toast.success('Marked as complete')}>
+                              <CheckCircle className="h-3.5 w-3.5 mr-2" />
+                              Mark Complete
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => toast.info('Reassign technician')} >
+                              <Settings className="h-3.5 w-3.5 mr-2" />
+                              Reassign
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => toast.error('Cancelled maintenance')} className="text-red-600">
+                              <XCircle className="h-3.5 w-3.5 mr-2" />
+                              Cancel
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -1165,7 +1197,7 @@ export default function AssetsPage() {
 
       {/* Plant View Modal */}
       <Dialog open={viewPlantModal} onOpenChange={setViewPlantModal}>
-        <DialogContent className="max-w-2xl p-0 gap-0 rounded-none border-2 border-slate-300">
+        <DialogContent showCloseButton={false} className="max-w-2xl p-0 gap-0 rounded-none border-2 border-slate-300">
           <DialogTitle className="sr-only">Plant Details</DialogTitle>
           <div className="bg-white px-4 py-3 flex items-center justify-between border-b-2 border-slate-200">
             <div className="flex items-center gap-3">
@@ -1262,7 +1294,7 @@ export default function AssetsPage() {
 
       {/* Plant Add/Edit Modal */}
       <Dialog open={plantModalOpen} onOpenChange={setPlantModalOpen}>
-        <DialogContent className="max-w-lg p-0 gap-0 rounded-none border-2 border-slate-300">
+        <DialogContent showCloseButton={false} className="max-w-lg p-0 gap-0 rounded-none border-2 border-slate-300">
           <DialogTitle className="sr-only">Plant Form</DialogTitle>
           <div className="bg-white px-4 py-3 flex items-center justify-between border-b-2 border-slate-200">
             <div className="flex items-center gap-3">
@@ -1354,7 +1386,7 @@ export default function AssetsPage() {
 
       {/* Asset View Modal */}
       <Dialog open={viewAssetModal} onOpenChange={setViewAssetModal}>
-        <DialogContent className="max-w-2xl p-0 gap-0 rounded-none border-2 border-slate-300">
+        <DialogContent showCloseButton={false} className="max-w-2xl p-0 gap-0 rounded-none border-2 border-slate-300">
           <DialogTitle className="sr-only">Equipment Details</DialogTitle>
           <div className="bg-white px-4 py-3 flex items-center justify-between border-b-2 border-slate-200">
             <div className="flex items-center gap-3">
@@ -1466,7 +1498,7 @@ export default function AssetsPage() {
 
       {/* Asset Add/Edit Modal */}
       <Dialog open={assetModalOpen} onOpenChange={setAssetModalOpen}>
-        <DialogContent className="max-w-lg p-0 gap-0 rounded-none border-2 border-slate-300 max-h-[90vh] overflow-y-auto">
+        <DialogContent showCloseButton={false} className="max-w-lg p-0 gap-0 rounded-none border-2 border-slate-300 max-h-[90vh] overflow-y-auto">
           <DialogTitle className="sr-only">Equipment Form</DialogTitle>
           <div className="bg-white px-4 py-3 flex items-center justify-between border-b-2 border-slate-200 sticky top-0">
             <div className="flex items-center gap-3">
@@ -1594,7 +1626,7 @@ export default function AssetsPage() {
 
       {/* Sensor Add/Edit Modal */}
       <Dialog open={sensorModalOpen} onOpenChange={setSensorModalOpen}>
-        <DialogContent className="max-w-lg p-0 gap-0 rounded-none border-2 border-slate-300 max-h-[90vh] overflow-y-auto">
+        <DialogContent showCloseButton={false} className="max-w-lg p-0 gap-0 rounded-none border-2 border-slate-300 max-h-[90vh] overflow-y-auto">
           <DialogTitle className="sr-only">Sensor Form</DialogTitle>
           <div className="bg-white px-4 py-3 flex items-center justify-between border-b-2 border-slate-200 sticky top-0">
             <div className="flex items-center gap-3">
@@ -1718,7 +1750,7 @@ export default function AssetsPage() {
 
       {/* Sensor View Modal */}
       <Dialog open={viewSensorModal} onOpenChange={setViewSensorModal}>
-        <DialogContent className="max-w-lg p-0 gap-0 rounded-none border-2 border-slate-300">
+        <DialogContent showCloseButton={false} className="max-w-lg p-0 gap-0 rounded-none border-2 border-slate-300">
           <DialogTitle className="sr-only">Sensor Details</DialogTitle>
           <div className="bg-white px-4 py-3 flex items-center justify-between border-b-2 border-slate-200">
             <div className="flex items-center gap-3">
@@ -1801,7 +1833,7 @@ export default function AssetsPage() {
 
       {/* Maintenance Schedule Modal */}
       <Dialog open={maintenanceModalOpen} onOpenChange={setMaintenanceModalOpen}>
-        <DialogContent className="max-w-lg p-0 gap-0 rounded-none border-2 border-slate-300">
+        <DialogContent showCloseButton={false} className="max-w-lg p-0 gap-0 rounded-none border-2 border-slate-300">
           <DialogTitle className="sr-only">Schedule Maintenance</DialogTitle>
           <div className="bg-white px-4 py-3 flex items-center justify-between border-b-2 border-slate-200">
             <div className="flex items-center gap-3">

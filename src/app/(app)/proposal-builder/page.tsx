@@ -685,7 +685,7 @@ export default function ProposalBuilderPage() {
 
       {/* Proposal Detail Modal - Industrial Style */}
       <Dialog open={!!selectedProposal} onOpenChange={() => setSelectedProposal(null)}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden p-0 gap-0 rounded-none border-2 border-slate-300">
+        <DialogContent showCloseButton={false} className="max-w-4xl max-h-[90vh] overflow-hidden p-0 gap-0 rounded-none border-2 border-slate-300">
           <DialogTitle className="sr-only">Proposal Details</DialogTitle>
           {selectedProposal && (
             <>
@@ -858,7 +858,7 @@ export default function ProposalBuilderPage() {
 
       {/* New Proposal Modal - Industrial Style */}
       <Dialog open={showNewProposal} onOpenChange={() => { setShowNewProposal(false); setSelectedTemplate(null); }}>
-        <DialogContent className="max-w-lg p-0 gap-0 rounded-none border-2 border-slate-300">
+        <DialogContent showCloseButton={false} className="max-w-lg p-0 gap-0 rounded-none border-2 border-slate-300">
           <DialogTitle className="sr-only">Create New Proposal</DialogTitle>
           {/* Modal Header */}
           <div className="bg-white px-4 py-3 flex items-center justify-between border-b-2 border-slate-200">

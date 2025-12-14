@@ -129,7 +129,7 @@ export function InsightDetailModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl p-0 gap-0">
+      <DialogContent showCloseButton={false} className="max-w-2xl p-0 gap-0">
         {/* Header */}
         <div className="bg-slate-100 px-5 py-3 border-b-2 border-slate-300">
           <DialogHeader>

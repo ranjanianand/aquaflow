@@ -500,7 +500,7 @@ export default function ProcessFlowSchematicPage() {
 
       {/* Equipment Detail Panel - Matching e5.png/e6.png modal style */}
       <Dialog open={!!selectedEquipment} onOpenChange={() => { setSelectedEquipment(null); setIsEditing(false); }}>
-        <DialogContent className="max-w-lg p-0 gap-0 overflow-hidden">
+        <DialogContent showCloseButton={false} className="max-w-lg p-0 gap-0 overflow-hidden">
           {selectedEquipment && (
             <>
               {/* Header - matching e5.png style */}

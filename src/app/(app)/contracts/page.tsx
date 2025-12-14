@@ -496,7 +496,7 @@ export default function ContractsPage() {
 
       {/* View Contract Modal - Industrial Style */}
       <Dialog open={viewModalOpen} onOpenChange={setViewModalOpen}>
-        <DialogContent className="max-w-2xl p-0 gap-0 rounded-none border-2 border-slate-300">
+        <DialogContent showCloseButton={false} className="max-w-2xl p-0 gap-0 rounded-none border-2 border-slate-300">
           <DialogTitle className="sr-only">Contract Details</DialogTitle>
           {/* Modal Header */}
           <div className="bg-white px-4 py-3 flex items-center justify-between border-b-2 border-slate-200">
@@ -762,7 +762,7 @@ export default function ContractsPage() {
 
       {/* Add/Edit Contract Modal - Industrial Style */}
       <Dialog open={contractModalOpen} onOpenChange={setContractModalOpen}>
-        <DialogContent className="max-w-lg p-0 gap-0 rounded-none border-2 border-slate-300">
+        <DialogContent showCloseButton={false} className="max-w-lg p-0 gap-0 rounded-none border-2 border-slate-300">
           <DialogTitle className="sr-only">Contract Form</DialogTitle>
           {/* Modal Header */}
           <div className="bg-white px-4 py-3 flex items-center justify-between border-b-2 border-slate-200">

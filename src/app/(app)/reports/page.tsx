@@ -674,7 +674,7 @@ export default function ReportsPage() {
 
       {/* Custom Report Builder Dialog - Industrial Style */}
       <Dialog open={builderOpen} onOpenChange={setBuilderOpen}>
-        <DialogContent className="max-w-lg p-0 gap-0 rounded-none border-2 border-slate-300">
+        <DialogContent showCloseButton={false} className="max-w-lg p-0 gap-0 rounded-none border-2 border-slate-300">
           <DialogTitle className="sr-only">Create Custom Report</DialogTitle>
           {/* Modal Header */}
           <div className="bg-slate-800 px-4 py-3 flex items-center justify-between">

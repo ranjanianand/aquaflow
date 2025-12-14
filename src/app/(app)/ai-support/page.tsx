@@ -251,44 +251,32 @@ How can I assist you today?`,
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-100">
-      {/* Industrial Header */}
-      <div className="bg-slate-800 border-b-2 border-slate-700">
-        <div className="px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="p-2 bg-blue-600">
-                <Cpu className="h-5 w-5 text-white" />
-              </div>
-              <div>
-                <h1 className="text-[16px] font-bold text-white tracking-tight">
-                  AI AGENTIC SUPPORT
-                </h1>
-                <p className="text-[11px] text-slate-400 uppercase tracking-wider">
-                  Intelligent Operations & Analytics Assistant
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-4">
-              {/* AI Status Indicator */}
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-700 border border-slate-600">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                </span>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
-                  AI Online
-                </span>
-              </div>
-              <div className="flex items-center gap-2 text-slate-400">
-                <Activity className="h-4 w-4" />
-                <span className="text-[10px] font-bold uppercase tracking-wider">
-                  Response Time: 1.2s avg
-                </span>
-              </div>
-            </div>
+      {/* Industrial Header - Compact */}
+      <header className="bg-slate-800 px-4 py-2.5 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Cpu className="h-4 w-4 text-white" />
+          <span className="text-sm font-bold text-white uppercase tracking-wider">AI Agentic Support</span>
+          <span className="text-[10px] text-slate-400">Intelligent Operations Assistant</span>
+        </div>
+        <div className="flex items-center gap-4">
+          {/* AI Status Indicator */}
+          <div className="flex items-center gap-2 px-2 py-1 bg-slate-700 border border-slate-600">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+            </span>
+            <span className="text-[9px] font-bold uppercase tracking-wider text-emerald-400">
+              AI Online
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 text-slate-400">
+            <Activity className="h-3.5 w-3.5" />
+            <span className="text-[9px] font-bold uppercase tracking-wider">
+              1.2s avg
+            </span>
           </div>
         </div>
-      </div>
+      </header>
 
       <div className="flex-1 p-6 flex gap-6">
         {/* Main Chat Area */}

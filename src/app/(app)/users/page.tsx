@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { mockUsers, roleInfo, rolePermissions } from '@/data/mock-users';
+import { mockPlants } from '@/data/mock-plants';
 import { User, UserRole } from '@/types';
 import {
   Users,
@@ -590,7 +591,7 @@ export default function UsersPage() {
 
       {/* Add/Edit User Modal - Industrial Style */}
       <Dialog open={userModalOpen} onOpenChange={setUserModalOpen}>
-        <DialogContent className="max-w-lg p-0 gap-0 rounded-none border-2 border-slate-300">
+        <DialogContent showCloseButton={false} className="max-w-lg p-0 gap-0 rounded-none border-2 border-slate-300">
           <DialogTitle className="sr-only">{editingUser ? 'Edit User' : 'Add New User'}</DialogTitle>
 
           {/* Modal Header */}
@@ -685,11 +686,15 @@ export default function UsersPage() {
                 Plant Access
               </label>
               <select
-                defaultValue={editingUser?.plantAccess.includes('all') ? 'all' : 'selected'}
+                defaultValue={editingUser?.plantAccess.includes('all') ? 'all' : editingUser?.plantAccess[0] || ''}
                 className="w-full px-4 py-2 border-2 border-slate-300 text-sm focus:outline-none focus:border-slate-500 bg-white"
               >
                 <option value="all">All Plants</option>
-                <option value="selected">Selected Plants</option>
+                {mockPlants.map((plant) => (
+                  <option key={plant.id} value={plant.id}>
+                    {plant.name}
+                  </option>
+                ))}
               </select>
             </div>
           </div>

@@ -584,7 +584,7 @@ export default function SmartCartPage() {
 
       {/* Recommendation Detail Modal - Industrial Style */}
       <Dialog open={!!selectedRecommendation} onOpenChange={() => setSelectedRecommendation(null)}>
-        <DialogContent className="max-w-2xl p-0 gap-0 rounded-none border-2 border-slate-300">
+        <DialogContent showCloseButton={false} className="max-w-2xl p-0 gap-0 rounded-none border-2 border-slate-300">
           <DialogTitle className="sr-only">Add Recommendation to Cart</DialogTitle>
           {selectedRecommendation && (
             <>
@@ -710,7 +710,7 @@ export default function SmartCartPage() {
 
       {/* Checkout Modal - Industrial Style */}
       <Dialog open={showCheckout} onOpenChange={setShowCheckout}>
-        <DialogContent className="max-w-lg p-0 gap-0 rounded-none border-2 border-slate-300">
+        <DialogContent showCloseButton={false} className="max-w-lg p-0 gap-0 rounded-none border-2 border-slate-300">
           <DialogTitle className="sr-only">Checkout Cart</DialogTitle>
           {/* Modal Header */}
           <div className="bg-white px-4 py-3 flex items-center justify-between border-b-2 border-slate-200">
