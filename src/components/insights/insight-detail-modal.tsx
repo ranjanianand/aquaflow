@@ -406,7 +406,7 @@ export function InsightDetailModal({
         {/* Footer with Links */}
         <div className="flex items-center gap-2 px-5 py-3 border-t-2 border-slate-200 bg-slate-50">
           <Link
-            href={`/monitoring?plant=${insight.plantId}&sensor=${insight.sensorId || 'all'}`}
+            href={`/monitoring?plant=${insight.plantId}`}
             className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2 text-[11px] font-bold uppercase bg-slate-700 text-white hover:bg-slate-800 transition-colors"
           >
             <ExternalLink className="h-3.5 w-3.5" />
