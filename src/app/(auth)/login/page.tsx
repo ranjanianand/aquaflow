@@ -169,7 +169,7 @@ export default function LoginPage() {
         {/* Footer */}
         <div className="relative z-10 pt-4 border-t border-white/10 text-center">
           <p className="text-[9px] text-slate-400">
-            © 2024 YOZY Technologies. All rights reserved.
+            © 2024 MWTS | Powered by YOZY
           </p>
           <p className="text-[9px] text-slate-500 mt-0.5">
             Version 2.1.0 | Support: support@yozy.com
@@ -284,7 +284,7 @@ export default function LoginPage() {
           {/* Mobile Footer */}
           <div className="lg:hidden mt-4 text-center">
             <p className="text-[9px] text-slate-500">
-              © 2024 YOZY Technologies
+              © 2024 MWTS | Powered by YOZY
             </p>
           </div>
         </div>
