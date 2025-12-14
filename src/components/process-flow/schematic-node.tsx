@@ -173,38 +173,42 @@ function SchematicNodeComponent({ data, selected }: { data: SchematicNodeData; s
   const primaryMetric = data.metrics?.[0];
   const displayValue = data.primaryValue || (primaryMetric ? `${primaryMetric.value} ${primaryMetric.unit}` : null);
 
+  // Common handle style - visible on hover with industrial styling
+  const handleBaseStyle = {
+    width: 10,
+    height: 10,
+    background: '#0066ff',
+    border: '2px solid #ffffff',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+    transition: 'all 0.15s ease',
+  };
+
   return (
     <div
       className={cn(
-        'relative flex flex-col items-center gap-1 p-2 transition-all duration-150',
+        'group relative flex flex-col items-center gap-1 p-2 transition-all duration-150',
         'hover:scale-105 cursor-pointer',
         selected && 'ring-2 ring-blue-500 ring-offset-2 ring-offset-background',
         isAlarm && 'animate-pulse'
       )}
     >
-      {/* Connection handles - positioned INSIDE the node so arrows touch the icon */}
+      {/* Connection handles - visible on hover for better UX */}
       <Handle
         type="target"
         position={Position.Left}
+        className="!opacity-0 group-hover:!opacity-100 hover:!scale-125"
         style={{
-          width: 8,
-          height: 8,
-          background: 'transparent',
-          border: 'none',
-          left: 12, // Inside the icon box
-          opacity: 0,
+          ...handleBaseStyle,
+          left: -5,
         }}
       />
       <Handle
         type="source"
         position={Position.Right}
+        className="!opacity-0 group-hover:!opacity-100 hover:!scale-125"
         style={{
-          width: 8,
-          height: 8,
-          background: 'transparent',
-          border: 'none',
-          right: 12, // Inside the icon box
-          opacity: 0,
+          ...handleBaseStyle,
+          right: -5,
         }}
       />
       {/* Additional handles for vertical connections */}
@@ -212,26 +216,20 @@ function SchematicNodeComponent({ data, selected }: { data: SchematicNodeData; s
         type="target"
         position={Position.Top}
         id="top"
+        className="!opacity-0 group-hover:!opacity-100 hover:!scale-125"
         style={{
-          width: 8,
-          height: 8,
-          background: 'transparent',
-          border: 'none',
-          top: 12, // Inside the icon box
-          opacity: 0,
+          ...handleBaseStyle,
+          top: -5,
         }}
       />
       <Handle
         type="source"
         position={Position.Bottom}
         id="bottom"
+        className="!opacity-0 group-hover:!opacity-100 hover:!scale-125"
         style={{
-          width: 8,
-          height: 8,
-          background: 'transparent',
-          border: 'none',
-          bottom: 24, // Above the label, inside icon area
-          opacity: 0,
+          ...handleBaseStyle,
+          bottom: 20,
         }}
       />
 

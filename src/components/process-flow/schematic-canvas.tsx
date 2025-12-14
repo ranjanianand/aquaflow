@@ -67,6 +67,49 @@ const fluctuateValue = (currentValue: string, variance: number = 0.05): string =
   return num >= 100 ? Math.round(newValue).toLocaleString() : newValue.toFixed(1);
 };
 
+// Deterministic seeded random number generator for historical playback
+const seededRandom = (seed: number): number => {
+  const x = Math.sin(seed * 12345.6789) * 43758.5453;
+  return x - Math.floor(x);
+};
+
+// Generate historical value based on node ID and time position (deterministic)
+const generateHistoricalValue = (
+  nodeId: string,
+  baseValue: number,
+  hoursAgo: number,
+  variance: number = 0.15
+): number => {
+  // Create a unique seed from nodeId and time
+  const nodeHash = nodeId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  const seed = nodeHash * 1000 + hoursAgo * 100;
+
+  // Generate wave pattern (simulates daily cycle)
+  const dailyCycle = Math.sin((24 - hoursAgo) * Math.PI / 12) * 0.1;
+
+  // Add some noise
+  const noise = (seededRandom(seed) - 0.5) * variance * 2;
+
+  // Simulate occasional anomalies (1 in 20 chance at each hour)
+  const anomalySeed = seededRandom(seed + 999);
+  const hasAnomaly = anomalySeed > 0.95;
+  const anomalyFactor = hasAnomaly ? (seededRandom(seed + 1000) > 0.5 ? 1.3 : 0.7) : 1;
+
+  return baseValue * (1 + dailyCycle + noise) * anomalyFactor;
+};
+
+// Format value based on magnitude
+const formatHistoricalValue = (value: number, originalValue: string): string => {
+  const originalNum = parseFloat(originalValue.replace(/,/g, ''));
+  if (originalNum >= 100) {
+    return Math.round(value).toLocaleString();
+  } else if (originalNum >= 10) {
+    return value.toFixed(1);
+  } else {
+    return value.toFixed(2);
+  }
+};
+
 // Initial nodes - more compact spacing for schematic view
 const createInitialNodes = (): Node<SchematicNodeData>[] => [
   {
@@ -470,9 +513,17 @@ interface SchematicCanvasProps {
   onNodeSelect?: (node: Node<SchematicNodeData> | null) => void;
   onToolbarStateChange?: (state: SchematicToolbarState, actions: SchematicToolbarActions) => void;
   showToolbar?: boolean; // Whether to show the internal toolbar (default: true for backwards compatibility)
+  isHistoricalMode?: boolean; // Whether historical playback is active
+  playbackPosition?: number; // 0-24 hours (24 = now, 0 = 24h ago)
 }
 
-function SchematicCanvasInner({ onNodeSelect, onToolbarStateChange, showToolbar = true }: SchematicCanvasProps) {
+function SchematicCanvasInner({
+  onNodeSelect,
+  onToolbarStateChange,
+  showToolbar = true,
+  isHistoricalMode = false,
+  playbackPosition = 24,
+}: SchematicCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState(createInitialNodes());
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [isLocked, setIsLocked] = useState(false);
@@ -507,9 +558,9 @@ function SchematicCanvasInner({ onNodeSelect, onToolbarStateChange, showToolbar 
     setZoomLevel(getZoom());
   }, [getZoom]);
 
-  // Real-time simulation
+  // Real-time simulation - pause when in historical mode
   useEffect(() => {
-    if (!isSimulating) return;
+    if (!isSimulating || isHistoricalMode) return;
 
     const interval = setInterval(() => {
       setNodes((nds) =>
@@ -545,7 +596,120 @@ function SchematicCanvasInner({ onNodeSelect, onToolbarStateChange, showToolbar 
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [isSimulating, setNodes]);
+  }, [isSimulating, isHistoricalMode, setNodes]);
+
+  // Store original node values for historical playback
+  const originalNodeValuesRef = useRef<Map<string, { primaryValue?: string; metrics?: EquipmentMetric[] }>>(new Map());
+
+  // Capture original values when entering historical mode
+  useEffect(() => {
+    if (isHistoricalMode && originalNodeValuesRef.current.size === 0) {
+      // Store original values
+      const originalValues = new Map<string, { primaryValue?: string; metrics?: EquipmentMetric[] }>();
+      setNodes((nds) => {
+        nds.forEach((node) => {
+          originalValues.set(node.id, {
+            primaryValue: node.data.primaryValue,
+            metrics: node.data.metrics ? [...node.data.metrics] : undefined,
+          });
+        });
+        return nds;
+      });
+      originalNodeValuesRef.current = originalValues;
+    } else if (!isHistoricalMode) {
+      // Restore original values when exiting historical mode
+      if (originalNodeValuesRef.current.size > 0) {
+        setNodes((nds) =>
+          nds.map((node) => {
+            const original = originalNodeValuesRef.current.get(node.id);
+            if (original) {
+              return {
+                ...node,
+                data: {
+                  ...node.data,
+                  primaryValue: original.primaryValue,
+                  metrics: original.metrics,
+                  lastUpdated: 'just now',
+                },
+              };
+            }
+            return node;
+          })
+        );
+      }
+      originalNodeValuesRef.current = new Map();
+    }
+  }, [isHistoricalMode, setNodes]);
+
+  // Historical playback - update nodes based on playback position
+  useEffect(() => {
+    if (!isHistoricalMode) return;
+
+    const hoursAgo = 24 - playbackPosition;
+
+    // Generate timestamp for display
+    const now = new Date();
+    const historicalTime = new Date(now.getTime() - hoursAgo * 60 * 60 * 1000);
+    const timeString = historicalTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const dateString = historicalTime.toLocaleDateString([], { month: 'short', day: 'numeric' });
+
+    setNodes((nds) =>
+      nds.map((node) => {
+        const original = originalNodeValuesRef.current.get(node.id);
+        if (!original || !original.metrics) return node;
+
+        // Generate historical values for each metric
+        const updatedMetrics = original.metrics.map((metric: EquipmentMetric) => {
+          if (metric.label === 'Position') {
+            return metric; // Valve position doesn't change historically
+          }
+
+          const baseValue = parseFloat(metric.value.replace(/,/g, ''));
+          if (isNaN(baseValue)) return metric;
+
+          const historicalValue = generateHistoricalValue(node.id, baseValue, hoursAgo);
+          const formattedValue = formatHistoricalValue(historicalValue, metric.value);
+
+          // Generate trend data for the period around this time
+          const trendData = [];
+          for (let i = 7; i >= 0; i--) {
+            const trendHoursAgo = hoursAgo + i * 0.5;
+            if (trendHoursAgo >= 0 && trendHoursAgo <= 24) {
+              trendData.push(generateHistoricalValue(node.id, baseValue, trendHoursAgo));
+            }
+          }
+
+          // Determine status based on historical value deviation
+          const deviation = Math.abs(historicalValue - baseValue) / baseValue;
+          let status: 'normal' | 'warning' | 'critical' = 'normal';
+          if (deviation > 0.25) {
+            status = 'critical';
+          } else if (deviation > 0.15) {
+            status = 'warning';
+          }
+
+          return {
+            ...metric,
+            value: formattedValue,
+            trend: trendData.length > 0 ? trendData : metric.trend,
+            status,
+          };
+        });
+
+        const primaryValue = getPrimaryValue(node.data.type, updatedMetrics);
+
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            metrics: updatedMetrics,
+            primaryValue,
+            lastUpdated: `${dateString} ${timeString}`,
+          },
+        };
+      })
+    );
+  }, [isHistoricalMode, playbackPosition, setNodes]);
 
   const onConnect = useCallback(
     (connection: Connection) => {
@@ -604,25 +768,6 @@ function SchematicCanvasInner({ onNodeSelect, onToolbarStateChange, showToolbar 
     setEdges((eds) => eds.filter((e) => e.id !== edgeId));
     setSelectedEdge(null);
   }, [setEdges]);
-
-  // Keyboard handler for Delete key
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (selectedEdge && !isLocked) {
-          e.preventDefault();
-          deleteSelectedEdge();
-        }
-      }
-      if (e.key === 'Escape') {
-        setSelectedEdge(null);
-        setSelectedNode(null);
-        onNodeSelect?.(null);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedEdge, isLocked, deleteSelectedEdge, onNodeSelect]);
 
   // Add node at viewport center and auto-select it (visually only, no dialog)
   const addNode = useCallback(
@@ -721,6 +866,65 @@ function SchematicCanvasInner({ onNodeSelect, onToolbarStateChange, showToolbar 
     },
     [setNodes]
   );
+
+  // Keyboard handler for shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't handle shortcuts when typing in inputs
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      // Delete - remove selected edge or node
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedEdge && !isLocked) {
+          e.preventDefault();
+          deleteSelectedEdge();
+        } else if (selectedNodeRef.current && !isLocked) {
+          e.preventDefault();
+          deleteSelected();
+        }
+      }
+
+      // Escape - deselect all
+      if (e.key === 'Escape') {
+        setSelectedEdge(null);
+        setSelectedNode(null);
+        onNodeSelect?.(null);
+      }
+
+      // Ctrl/Cmd + 0 - Fit to view
+      if ((e.ctrlKey || e.metaKey) && e.key === '0') {
+        e.preventDefault();
+        fitView({ padding: 0.2, duration: 300 });
+      }
+
+      // Ctrl/Cmd + Plus - Zoom in
+      if ((e.ctrlKey || e.metaKey) && (e.key === '+' || e.key === '=')) {
+        e.preventDefault();
+        zoomIn();
+      }
+
+      // Ctrl/Cmd + Minus - Zoom out
+      if ((e.ctrlKey || e.metaKey) && e.key === '-') {
+        e.preventDefault();
+        zoomOut();
+      }
+
+      // L - Toggle lock
+      if (e.key === 'l' || e.key === 'L') {
+        setIsLocked(!isLockedRef.current);
+      }
+
+      // Space - Toggle simulation
+      if (e.key === ' ' && !isLocked) {
+        e.preventDefault();
+        setIsSimulating((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedEdge, isLocked, deleteSelectedEdge, deleteSelected, onNodeSelect, fitView, zoomIn, zoomOut]);
 
   // Stats
   const stats = useMemo(() => {
@@ -937,40 +1141,42 @@ function SchematicCanvasInner({ onNodeSelect, onToolbarStateChange, showToolbar 
           </Panel>
         )}
 
-        {/* Horizontal Zoom Controls - bottom right */}
-        <Panel position="bottom-right" className="flex items-center gap-1 bg-white border border-slate-200 rounded px-1 py-0.5">
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => zoomOut()}
-            className="h-6 w-6 p-0"
-            title="Zoom Out"
-          >
-            <Minus className="h-3.5 w-3.5" />
-          </Button>
-          <span className="text-[10px] font-mono text-slate-600 w-9 text-center tabular-nums">
-            {Math.round(zoomLevel * 100)}%
-          </span>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => zoomIn()}
-            className="h-6 w-6 p-0"
-            title="Zoom In"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </Button>
-          <div className="h-4 w-px bg-slate-200 mx-0.5" />
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => fitView({ padding: 0.2, duration: 300 })}
-            className="h-6 w-6 p-0"
-            title="Fit to View"
-          >
-            <Maximize2 className="h-3.5 w-3.5" />
-          </Button>
-        </Panel>
+        {/* Zoom Controls - bottom right (only shown when external toolbar is hidden) */}
+        {showToolbar && (
+          <Panel position="bottom-right" className="flex items-center gap-1 bg-white border border-slate-200 rounded px-1 py-0.5">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => zoomOut()}
+              className="h-6 w-6 p-0"
+              title="Zoom Out"
+            >
+              <Minus className="h-3.5 w-3.5" />
+            </Button>
+            <span className="text-[10px] font-mono text-slate-600 w-9 text-center tabular-nums">
+              {Math.round(zoomLevel * 100)}%
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => zoomIn()}
+              className="h-6 w-6 p-0"
+              title="Zoom In"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+            <div className="h-4 w-px bg-slate-200 mx-0.5" />
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => fitView({ padding: 0.2, duration: 300 })}
+              className="h-6 w-6 p-0"
+              title="Fit to View"
+            >
+              <Maximize2 className="h-3.5 w-3.5" />
+            </Button>
+          </Panel>
+        )}
 
         {/* Flow legend */}
         <Panel position="bottom-left" className="bg-card/90 backdrop-blur-sm border border-border rounded-lg px-3 py-2">
@@ -994,16 +1200,20 @@ function SchematicCanvasInner({ onNodeSelect, onToolbarStateChange, showToolbar 
           </div>
         </Panel>
 
-        {/* Instructions */}
+        {/* Instructions with keyboard shortcuts */}
         <Panel position="bottom-center" className="bg-card/90 backdrop-blur-sm border border-border rounded-lg px-4 py-1.5">
           <p className="text-[10px] text-muted-foreground">
-            <span className="font-medium text-foreground">Click node</span> for details
-            <span className="mx-2">•</span>
-            <span className="font-medium text-foreground">Click line</span> to select & delete
-            <span className="mx-2">•</span>
-            <span className="font-medium text-foreground">Drag line end</span> to reconnect
-            <span className="mx-2">•</span>
-            <span className="font-medium text-foreground">Drag from edge</span> to connect
+            <span className="font-medium text-foreground">Click</span> node for details
+            <span className="mx-1.5">•</span>
+            <span className="font-medium text-foreground">Hover</span> for connections
+            <span className="mx-1.5">•</span>
+            <kbd className="px-1 py-0.5 bg-slate-100 rounded text-[9px] font-mono">Del</kbd> delete
+            <span className="mx-1.5">•</span>
+            <kbd className="px-1 py-0.5 bg-slate-100 rounded text-[9px] font-mono">L</kbd> lock
+            <span className="mx-1.5">•</span>
+            <kbd className="px-1 py-0.5 bg-slate-100 rounded text-[9px] font-mono">Space</kbd> pause
+            <span className="mx-1.5">•</span>
+            <kbd className="px-1 py-0.5 bg-slate-100 rounded text-[9px] font-mono">Ctrl+0</kbd> fit
           </p>
         </Panel>
 
@@ -1021,13 +1231,21 @@ function SchematicCanvasInner({ onNodeSelect, onToolbarStateChange, showToolbar 
 }
 
 // Wrapper component with ReactFlowProvider for zoom controls
-export function SchematicCanvas({ onNodeSelect, onToolbarStateChange, showToolbar = true }: SchematicCanvasProps) {
+export function SchematicCanvas({
+  onNodeSelect,
+  onToolbarStateChange,
+  showToolbar = true,
+  isHistoricalMode = false,
+  playbackPosition = 24,
+}: SchematicCanvasProps) {
   return (
     <ReactFlowProvider>
       <SchematicCanvasInner
         onNodeSelect={onNodeSelect}
         onToolbarStateChange={onToolbarStateChange}
         showToolbar={showToolbar}
+        isHistoricalMode={isHistoricalMode}
+        playbackPosition={playbackPosition}
       />
     </ReactFlowProvider>
   );
