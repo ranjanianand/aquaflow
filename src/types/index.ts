@@ -16,6 +16,10 @@ export type SensorType =
 
 export type SensorStatus = 'normal' | 'warning' | 'critical';
 
+export type SensorPriority = 'low' | 'medium' | 'high' | 'critical';
+
+export type DataSource = 'sensor' | 'manual' | 'calculated';
+
 export type AlertSeverity = 'critical' | 'warning' | 'info';
 
 export type AlertStatus = 'active' | 'acknowledged' | 'resolved';
@@ -56,6 +60,19 @@ export interface Sensor {
   commStatus: SensorCommStatus;
   lastUpdated: Date;
   history: SensorReading[];
+  priority: SensorPriority;
+  location?: string; // e.g., "Inlet", "Outlet", "Tank A"
+  tag?: string; // e.g., "TUR-001", "PH-002"
+}
+
+export interface ManualReading {
+  id: string;
+  sensorId: string;
+  value: number;
+  timestamp: Date;
+  notes?: string;
+  enteredBy: string;
+  dataSource: DataSource;
 }
 
 export interface Alert {

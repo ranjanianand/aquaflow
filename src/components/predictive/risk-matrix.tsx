@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { cn } from '@/lib/utils';
 import { AlertTriangle, CheckCircle, Activity, Zap } from 'lucide-react';
 
@@ -113,9 +114,9 @@ export function RiskMatrix({ items = defaultItems, className }: RiskMatrixProps)
 
               {/* Matrix rows */}
               {[5, 4, 3, 2, 1].map((impactLevel) => (
-                <>
+                <React.Fragment key={`row-${impactLevel}`}>
                   {/* Row header */}
-                  <div key={`impact-${impactLevel}`} className="h-16 flex items-center justify-end pr-2">
+                  <div className="h-16 flex items-center justify-end pr-2">
                     <span className="text-[8px] font-bold uppercase text-slate-500 text-right">
                       {impactLabels[impactLevel - 1]}
                     </span>
@@ -159,7 +160,7 @@ export function RiskMatrix({ items = defaultItems, className }: RiskMatrixProps)
                       </div>
                     );
                   })}
-                </>
+                </React.Fragment>
               ))}
             </div>
 

@@ -14,7 +14,7 @@ import {
   ProcessEfficiencyChart,
   IndustrialPredictiveSummary,
   ManagerDashboard,
-  ExecutiveDashboard
+  ExecutiveDashboard,
 } from '@/components/dashboard-v2';
 
 // Loading skeleton component

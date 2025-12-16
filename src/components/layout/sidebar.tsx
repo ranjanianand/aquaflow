@@ -31,6 +31,8 @@ import {
   HardHat,
   BarChart3,
   PieChart,
+  TrendingUp,
+  Sparkles,
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
@@ -75,7 +77,8 @@ const navigation: NavSection[] = [
   {
     title: 'Analytics',
     items: [
-      { title: 'Trends', href: '/insights', icon: Lightbulb },
+      { title: 'Trends & Compare', href: '/trends', icon: TrendingUp },
+      { title: 'Insights', href: '/insights', icon: Sparkles },
       { title: 'Predictive', href: '/predictive', icon: Cpu },
       { title: 'Energy', href: '/energy', icon: Zap },
     ],

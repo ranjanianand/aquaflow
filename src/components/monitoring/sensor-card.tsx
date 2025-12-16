@@ -1,8 +1,8 @@
 'use client';
 
-import { Sensor } from '@/types';
+import { Sensor, SensorPriority } from '@/types';
 import { cn } from '@/lib/utils';
-import { TrendingUp, TrendingDown, Minus, Wifi, WifiOff, AlertTriangle } from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus, Wifi, WifiOff, AlertTriangle, Tag } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
 interface SensorCardProps {
@@ -20,6 +20,13 @@ const commStatusIcon: Record<Sensor['commStatus'], { icon: typeof Wifi; color: s
   online: { icon: Wifi, color: 'text-emerald-500', label: 'Online' },
   stale: { icon: AlertTriangle, color: 'text-amber-500', label: 'Stale' },
   offline: { icon: WifiOff, color: 'text-red-500', label: 'Offline' },
+};
+
+const priorityConfig: Record<SensorPriority, { label: string; bgColor: string; textColor: string }> = {
+  critical: { label: 'P1', bgColor: 'bg-red-100', textColor: 'text-red-700' },
+  high: { label: 'P2', bgColor: 'bg-orange-100', textColor: 'text-orange-700' },
+  medium: { label: 'P3', bgColor: 'bg-yellow-100', textColor: 'text-yellow-700' },
+  low: { label: 'P4', bgColor: 'bg-slate-100', textColor: 'text-slate-600' },
 };
 
 export function SensorCard({ sensor, onClick }: SensorCardProps) {
@@ -93,11 +100,25 @@ export function SensorCard({ sensor, onClick }: SensorCardProps) {
       )}
 
       <div className="p-3">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 truncate pr-2">
-            {sensor.name}
-          </span>
+        {/* Header with priority and tag */}
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+            {/* Priority badge */}
+            <span className={cn(
+              'text-[8px] font-bold px-1 py-0.5 flex-shrink-0',
+              priorityConfig[sensor.priority].bgColor,
+              priorityConfig[sensor.priority].textColor
+            )}>
+              {priorityConfig[sensor.priority].label}
+            </span>
+            {/* Sensor tag */}
+            {sensor.tag && (
+              <span className="text-[9px] font-mono text-slate-400 flex items-center gap-0.5 flex-shrink-0">
+                <Tag className="h-2.5 w-2.5" />
+                {sensor.tag}
+              </span>
+            )}
+          </div>
           <span className={cn(
             'text-[9px] font-bold px-1.5 py-0.5 flex-shrink-0',
             sensor.status === 'normal' && 'bg-emerald-100 text-emerald-700',
@@ -107,6 +128,10 @@ export function SensorCard({ sensor, onClick }: SensorCardProps) {
             {statusLabel[sensor.status]}
           </span>
         </div>
+        {/* Sensor name */}
+        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 truncate mb-2">
+          {sensor.name}
+        </p>
 
         {/* Value */}
         <div className="flex items-baseline gap-1.5 mb-1">

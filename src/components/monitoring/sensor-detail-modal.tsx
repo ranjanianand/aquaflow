@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { Sensor } from '@/types';
 import { cn } from '@/lib/utils';
 import {
@@ -21,8 +22,12 @@ import {
   WifiOff,
   Target,
   Gauge,
+  ClipboardEdit,
+  FileEdit,
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
+import { ManualEntryModal } from './manual-entry-modal';
+import { useManualReadingsStore } from '@/stores/manual-readings-store';
 import {
   LineChart,
   Line,
@@ -53,6 +58,12 @@ const commStatusConfig = {
 };
 
 export function SensorDetailModal({ sensor, open, onClose }: SensorDetailModalProps) {
+  const [showManualEntry, setShowManualEntry] = useState(false);
+  const allReadings = useManualReadingsStore((state) => state.readings);
+  const manualReadings = sensor
+    ? allReadings.filter((r) => r.sensorId === sensor.id)
+    : [];
+
   if (!sensor) return null;
 
   const statusInfo = statusConfig[sensor.status];
@@ -307,8 +318,52 @@ export function SensorDetailModal({ sensor, open, onClose }: SensorDetailModalPr
           </div>
         </div>
 
+        {/* Manual Readings Section */}
+        {manualReadings.length > 0 && (
+          <div className="px-4 pb-4">
+            <div className="border-2 border-blue-200 bg-blue-50 p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <FileEdit className="h-4 w-4 text-blue-600" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700">
+                  Manual Readings ({manualReadings.length})
+                </span>
+              </div>
+              <div className="space-y-2 max-h-[120px] overflow-y-auto">
+                {manualReadings.slice(0, 5).map((reading) => (
+                  <div
+                    key={reading.id}
+                    className="flex items-center justify-between bg-white border border-blue-200 px-3 py-2"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 font-bold">
+                        MANUAL
+                      </span>
+                      <span className="text-sm font-mono font-bold text-slate-700">
+                        {reading.value.toFixed(1)} {sensor.unit}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[9px] font-mono text-slate-500">
+                        {format(new Date(reading.timestamp), 'MMM dd, HH:mm')}
+                      </p>
+                      <p className="text-[8px] text-slate-400">{reading.enteredBy}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Footer Actions */}
-        <div className="bg-slate-100 px-4 py-3 border-t-2 border-slate-300 flex items-center justify-end gap-2">
+        <div className="bg-slate-100 px-4 py-3 border-t-2 border-slate-300 flex items-center justify-between">
+          <button
+            onClick={() => setShowManualEntry(true)}
+            className="px-4 py-2 text-[10px] font-bold uppercase bg-blue-600 text-white hover:bg-blue-700 transition-colors flex items-center gap-2"
+          >
+            <ClipboardEdit className="h-3.5 w-3.5" />
+            Log Manual Reading
+          </button>
           <button
             onClick={onClose}
             className="px-4 py-2 text-[10px] font-bold uppercase bg-slate-700 text-white hover:bg-slate-800 transition-colors"
@@ -316,6 +371,13 @@ export function SensorDetailModal({ sensor, open, onClose }: SensorDetailModalPr
             Close
           </button>
         </div>
+
+        {/* Manual Entry Modal */}
+        <ManualEntryModal
+          sensor={sensor}
+          open={showManualEntry}
+          onClose={() => setShowManualEntry(false)}
+        />
       </DialogContent>
     </Dialog>
   );
