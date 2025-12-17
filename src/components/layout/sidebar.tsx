@@ -33,6 +33,8 @@ import {
   PieChart,
   TrendingUp,
   Sparkles,
+  Bot,
+  Layers,
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
@@ -87,6 +89,8 @@ const navigation: NavSection[] = [
     title: 'Engineering',
     items: [
       { title: 'AI Assistant', href: '/ai-support', icon: MessageSquare },
+      { title: 'Auto-Optimize', href: '/autonomous-optimization', icon: Bot },
+      { title: 'Virtual Twin', href: '/virtual-twin', icon: Layers },
       { title: 'P&ID', href: '/process-flow-schematic', icon: Workflow },
     ],
   },

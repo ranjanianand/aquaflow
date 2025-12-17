@@ -12,6 +12,16 @@ import {
 } from '@/data/mock-alerts';
 import { mockPlants } from '@/data/mock-plants';
 import {
+  getCorrelatedAlertGroups,
+  getFatigueMetrics,
+  getFirstOutAnalyses,
+  getSuppressionRules,
+  getOrchestrationStats,
+  CorrelatedAlertGroup,
+  FirstOutAnalysis,
+  SuppressionRule,
+} from '@/data/mock-alarm-orchestration';
+import {
   AlertTriangle,
   AlertCircle,
   CheckCircle,
@@ -25,6 +35,18 @@ import {
   BarChart3,
   PieChart as PieChartIcon,
   MapPin,
+  Zap,
+  Link2,
+  BrainCircuit,
+  ShieldOff,
+  Activity,
+  ChevronRight,
+  Target,
+  Gauge,
+  Timer,
+  BellOff,
+  Eye,
+  Play,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { AlertsSkeleton } from '@/components/shared/loading-skeleton';
@@ -47,7 +69,7 @@ import {
 } from 'recharts';
 import { subDays, format } from 'date-fns';
 
-type TabValue = 'overview' | 'active' | 'acknowledged' | 'resolved' | 'all';
+type TabValue = 'overview' | 'smart' | 'active' | 'acknowledged' | 'resolved' | 'all';
 
 export default function AlertsPage() {
   const [isLoading, setIsLoading] = useState(true);
@@ -58,6 +80,15 @@ export default function AlertsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [severityFilter, setSeverityFilter] = useState<string>('all');
   const [plantFilter, setPlantFilter] = useState<string>('all');
+  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
+  const [selectedFirstOut, setSelectedFirstOut] = useState<FirstOutAnalysis | null>(null);
+
+  // Smart Alarm Orchestration data
+  const correlatedGroups = useMemo(() => getCorrelatedAlertGroups(), []);
+  const fatigueMetrics = useMemo(() => getFatigueMetrics(), []);
+  const firstOutAnalyses = useMemo(() => getFirstOutAnalyses(), []);
+  const suppressionRules = useMemo(() => getSuppressionRules(), []);
+  const orchestrationStats = useMemo(() => getOrchestrationStats(), []);
 
   // Simulate initial data loading
   useEffect(() => {
@@ -306,26 +337,33 @@ export default function AlertsPage() {
           <div className="px-4 py-3 border-b border-slate-200 flex flex-col sm:flex-row gap-3">
             {/* Tab Buttons */}
             <div className="flex gap-1">
-              {(['overview', 'active', 'acknowledged', 'resolved', 'all'] as TabValue[]).map((tab) => {
-                const count = tab === 'all' ? stats.total : tab === 'overview' ? null : stats[tab as keyof typeof stats];
+              {(['overview', 'smart', 'active', 'acknowledged', 'resolved', 'all'] as TabValue[]).map((tab) => {
+                const count = tab === 'all' ? stats.total : tab === 'overview' || tab === 'smart' ? null : stats[tab as keyof typeof stats];
                 return (
                   <button
                     key={tab}
                     onClick={() => setSelectedTab(tab)}
                     className={cn(
-                      'px-3 py-1.5 text-[10px] font-bold uppercase transition-colors',
+                      'px-3 py-1.5 text-[10px] font-bold uppercase transition-colors flex items-center gap-1',
                       selectedTab === tab
                         ? 'bg-slate-700 text-white'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200',
+                      tab === 'smart' && selectedTab !== 'smart' && 'bg-violet-100 text-violet-700 hover:bg-violet-200'
                     )}
                   >
+                    {tab === 'smart' && <BrainCircuit className="h-3 w-3" />}
                     {tab}
                     {tab === 'active' && stats.active > 0 && (
                       <span className="ml-1 px-1.5 py-0.5 bg-red-600 text-white text-[9px]">
                         {stats.active}
                       </span>
                     )}
-                    {tab !== 'active' && tab !== 'overview' && (
+                    {tab === 'smart' && (
+                      <span className="ml-1 px-1.5 py-0.5 bg-violet-600 text-white text-[9px]">
+                        AI
+                      </span>
+                    )}
+                    {tab !== 'active' && tab !== 'overview' && tab !== 'smart' && (
                       <span className="ml-1 text-[9px] opacity-70">({count})</span>
                     )}
                   </button>
@@ -596,6 +634,417 @@ export default function AlertsPage() {
                       <Bar dataKey="value" name="Count" fill="#6366f1" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+          ) : selectedTab === 'smart' ? (
+            /* Smart Alarm Orchestration Tab */
+            <div className="p-4 space-y-4">
+              {/* Smart Stats Row */}
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                {/* Correlated Groups */}
+                <div className="border-2 border-slate-300 bg-white p-4 border-l-[3px] border-l-violet-500">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Correlated Groups</span>
+                    <Link2 className="h-4 w-4 text-violet-600" />
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xl font-bold tracking-tight text-violet-600" style={{ fontFamily: 'ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, monospace' }}>
+                      {orchestrationStats.correlatedGroups}
+                    </span>
+                    <span className="text-[10px] text-slate-500">ROOT CAUSES IDENTIFIED</span>
+                  </div>
+                </div>
+
+                {/* Suppressed Alerts */}
+                <div className="border-2 border-slate-300 bg-white p-4 border-l-[3px] border-l-emerald-500">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Suppressed Alerts</span>
+                    <BellOff className="h-4 w-4 text-emerald-600" />
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xl font-bold tracking-tight text-emerald-600" style={{ fontFamily: 'ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, monospace' }}>
+                      {orchestrationStats.suppressedAlerts}
+                    </span>
+                    <span className="text-[10px] text-slate-500">{orchestrationStats.alertReduction}% REDUCTION</span>
+                  </div>
+                </div>
+
+                {/* Avg Time to Root Cause */}
+                <div className="border-2 border-slate-300 bg-white p-4 border-l-[3px] border-l-blue-500">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Avg Root Cause Time</span>
+                    <Timer className="h-4 w-4 text-blue-600" />
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xl font-bold tracking-tight text-blue-600" style={{ fontFamily: 'ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, monospace' }}>
+                      {orchestrationStats.avgTimeToRootCause}m
+                    </span>
+                    <span className="text-[10px] text-slate-500">AI-ASSISTED</span>
+                  </div>
+                </div>
+
+                {/* Operator Fatigue */}
+                <div className={cn(
+                  'border-2 border-slate-300 bg-white p-4',
+                  fatigueMetrics.currentScore > 70 ? 'border-l-[3px] border-l-red-500' :
+                  fatigueMetrics.currentScore > 50 ? 'border-l-[3px] border-l-amber-500' :
+                  'border-l-[3px] border-l-emerald-500'
+                )}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Operator Fatigue</span>
+                    <Gauge className={cn(
+                      'h-4 w-4',
+                      fatigueMetrics.currentScore > 70 ? 'text-red-600' :
+                      fatigueMetrics.currentScore > 50 ? 'text-amber-600' : 'text-emerald-600'
+                    )} />
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className={cn(
+                      'text-2xl font-bold tracking-tight',
+                      fatigueMetrics.currentScore > 70 ? 'text-red-600' :
+                      fatigueMetrics.currentScore > 50 ? 'text-amber-600' : 'text-emerald-600'
+                    )} style={{ fontFamily: 'ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, monospace' }}>
+                      {fatigueMetrics.currentScore}%
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      {fatigueMetrics.currentScore > 70 ? 'HIGH LOAD' :
+                       fatigueMetrics.currentScore > 50 ? 'MODERATE' : 'MANAGEABLE'}
+                    </span>
+                  </div>
+                  <div className="mt-2 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                    <div
+                      className={cn(
+                        'h-full transition-all',
+                        fatigueMetrics.currentScore > 70 ? 'bg-red-500' :
+                        fatigueMetrics.currentScore > 50 ? 'bg-amber-500' : 'bg-emerald-500'
+                      )}
+                      style={{ width: `${fatigueMetrics.currentScore}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Main Content Grid */}
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                {/* Correlated Alert Groups */}
+                <div className="xl:col-span-2 border-2 border-slate-300 bg-white overflow-hidden">
+                  <div className="bg-violet-100 px-3 py-2 border-b-2 border-slate-300 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <BrainCircuit className="h-3.5 w-3.5 text-violet-700" />
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-violet-700">AI Root Cause Analysis</span>
+                    </div>
+                    <span className="text-[9px] px-2 py-0.5 bg-violet-600 text-white font-bold">
+                      {correlatedGroups.length} GROUPS
+                    </span>
+                  </div>
+                  <div className="divide-y divide-slate-200 max-h-[500px] overflow-y-auto">
+                    {correlatedGroups.map((group) => (
+                      <div key={group.id} className="p-4">
+                        {/* Group Header */}
+                        <div
+                          className="flex items-start justify-between cursor-pointer"
+                          onClick={() => setExpandedGroup(expandedGroup === group.id ? null : group.id)}
+                        >
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Target className={cn(
+                                'h-4 w-4',
+                                group.estimatedImpact === 'critical' ? 'text-red-600' :
+                                group.estimatedImpact === 'high' ? 'text-amber-600' : 'text-blue-600'
+                              )} />
+                              <span className="text-sm font-semibold text-slate-800">{group.rootCause}</span>
+                              <span className={cn(
+                                'text-[9px] font-bold px-1.5 py-0.5',
+                                group.estimatedImpact === 'critical' ? 'bg-red-100 text-red-700' :
+                                group.estimatedImpact === 'high' ? 'bg-amber-100 text-amber-700' :
+                                group.estimatedImpact === 'medium' ? 'bg-blue-100 text-blue-700' :
+                                'bg-slate-100 text-slate-700'
+                              )}>
+                                {group.estimatedImpact.toUpperCase()} IMPACT
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3 text-[10px] text-slate-500">
+                              <span className="flex items-center gap-1">
+                                <Link2 className="h-3 w-3" />
+                                {group.alerts.length} linked alerts
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Activity className="h-3 w-3" />
+                                {group.confidence}% confidence
+                              </span>
+                              <span className="capitalize px-1.5 py-0.5 bg-slate-100 text-slate-600 font-medium">
+                                {group.rootCauseType.replace('_', ' ')}
+                              </span>
+                            </div>
+                          </div>
+                          <ChevronRight className={cn(
+                            'h-5 w-5 text-slate-400 transition-transform',
+                            expandedGroup === group.id && 'rotate-90'
+                          )} />
+                        </div>
+
+                        {/* Expanded Content */}
+                        {expandedGroup === group.id && (
+                          <div className="mt-4 pl-6 space-y-3">
+                            {/* Linked Alerts */}
+                            <div className="space-y-2">
+                              <span className="text-[10px] font-bold uppercase text-slate-500">Linked Alerts</span>
+                              {group.alerts.map((alert, idx) => (
+                                <div key={alert.id} className="flex items-center gap-2 text-xs bg-slate-50 p-2 border border-slate-200">
+                                  <span className={cn(
+                                    'w-2 h-2 rounded-full',
+                                    alert.severity === 'critical' ? 'bg-red-500' :
+                                    alert.severity === 'warning' ? 'bg-amber-500' : 'bg-blue-500'
+                                  )} />
+                                  <span className="font-medium text-slate-700">{alert.type}</span>
+                                  <span className="text-slate-500">-</span>
+                                  <span className="text-slate-600">{alert.sensorName}</span>
+                                  <span className="ml-auto text-[10px] text-slate-400">{alert.duration}</span>
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Affected Systems */}
+                            <div>
+                              <span className="text-[10px] font-bold uppercase text-slate-500 block mb-1">Affected Systems</span>
+                              <div className="flex flex-wrap gap-1">
+                                {group.affectedSystems.map((system) => (
+                                  <span key={system} className="text-[10px] px-2 py-0.5 bg-slate-200 text-slate-700">
+                                    {system}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Suggested Action */}
+                            <div className="bg-emerald-50 border border-emerald-200 p-3">
+                              <span className="text-[10px] font-bold uppercase text-emerald-700 block mb-1">AI Suggested Action</span>
+                              <p className="text-xs text-emerald-800">{group.suggestedAction}</p>
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => {
+                                  toast.success('Alerts acknowledged as group');
+                                }}
+                                className="flex items-center gap-1 px-3 py-1.5 text-[10px] font-bold uppercase bg-slate-700 text-white hover:bg-slate-800 transition-colors"
+                              >
+                                <CheckCircle className="h-3 w-3" />
+                                Acknowledge All
+                              </button>
+                              <button
+                                onClick={() => {
+                                  toast.info('Suppressing similar alerts for 30 minutes');
+                                }}
+                                className="flex items-center gap-1 px-3 py-1.5 text-[10px] font-bold uppercase bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors"
+                              >
+                                <BellOff className="h-3 w-3" />
+                                Suppress Similar
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Right Column - Fatigue & Suppression */}
+                <div className="space-y-4">
+                  {/* Operator Fatigue Details */}
+                  <div className="border-2 border-slate-300 bg-white overflow-hidden">
+                    <div className="bg-slate-100 px-3 py-2 border-b-2 border-slate-300 flex items-center gap-2">
+                      <Gauge className="h-3.5 w-3.5 text-slate-600" />
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">Fatigue Analysis</span>
+                    </div>
+                    <div className="p-4 space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="text-center p-2 bg-slate-50 border border-slate-200">
+                          <div className="text-lg font-bold text-slate-700" style={{ fontFamily: 'ui-monospace, monospace' }}>
+                            {fatigueMetrics.alertsLastHour}
+                          </div>
+                          <div className="text-[9px] uppercase text-slate-500">Last Hour</div>
+                        </div>
+                        <div className="text-center p-2 bg-slate-50 border border-slate-200">
+                          <div className="text-lg font-bold text-slate-700" style={{ fontFamily: 'ui-monospace, monospace' }}>
+                            {fatigueMetrics.alertsLastShift}
+                          </div>
+                          <div className="text-[9px] uppercase text-slate-500">This Shift</div>
+                        </div>
+                        <div className="text-center p-2 bg-slate-50 border border-slate-200">
+                          <div className="text-lg font-bold text-slate-700" style={{ fontFamily: 'ui-monospace, monospace' }}>
+                            {fatigueMetrics.avgAcknowledgeTime}m
+                          </div>
+                          <div className="text-[9px] uppercase text-slate-500">Avg Ack Time</div>
+                        </div>
+                        <div className="text-center p-2 bg-slate-50 border border-slate-200">
+                          <div className={cn(
+                            'text-lg font-bold',
+                            fatigueMetrics.missedAlerts > 0 ? 'text-red-600' : 'text-emerald-600'
+                          )} style={{ fontFamily: 'ui-monospace, monospace' }}>
+                            {fatigueMetrics.missedAlerts}
+                          </div>
+                          <div className="text-[9px] uppercase text-slate-500">Missed</div>
+                        </div>
+                      </div>
+                      <div className="text-xs text-slate-600 bg-blue-50 border border-blue-200 p-2">
+                        <BrainCircuit className="h-3 w-3 text-blue-600 inline mr-1" />
+                        {fatigueMetrics.recommendation}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Active Suppression Rules */}
+                  <div className="border-2 border-slate-300 bg-white overflow-hidden">
+                    <div className="bg-slate-100 px-3 py-2 border-b-2 border-slate-300 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <ShieldOff className="h-3.5 w-3.5 text-slate-600" />
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">Suppression Rules</span>
+                      </div>
+                      <button className="text-[9px] px-2 py-0.5 bg-slate-700 text-white font-bold hover:bg-slate-800">
+                        + ADD
+                      </button>
+                    </div>
+                    <div className="divide-y divide-slate-200 max-h-[280px] overflow-y-auto">
+                      {suppressionRules.map((rule) => (
+                        <div key={rule.id} className="p-3">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-medium text-slate-700">{rule.name}</span>
+                            <span className={cn(
+                              'text-[9px] font-bold px-1.5 py-0.5',
+                              rule.active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                            )}>
+                              {rule.active ? 'ACTIVE' : 'EXPIRED'}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-slate-500 mb-2">{rule.condition}</p>
+                          <div className="flex items-center justify-between text-[9px]">
+                            <span className="text-slate-400">
+                              {rule.suppressedCount} suppressed
+                            </span>
+                            {rule.expiresAt && rule.active && (
+                              <span className="text-amber-600">
+                                Expires in {Math.round((rule.expiresAt.getTime() - Date.now()) / 60000)}m
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* First-Out Analysis Panel */}
+              <div className="border-2 border-slate-300 bg-white overflow-hidden">
+                <div className="bg-amber-100 px-3 py-2 border-b-2 border-slate-300 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Play className="h-3.5 w-3.5 text-amber-700" />
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700">First-Out Analysis</span>
+                  </div>
+                  <span className="text-[9px] text-amber-700">Sequence of events leading to alarms</span>
+                </div>
+                <div className="p-4">
+                  {/* Analysis Selector */}
+                  <div className="flex gap-2 mb-4">
+                    {firstOutAnalyses.map((analysis) => (
+                      <button
+                        key={analysis.id}
+                        onClick={() => setSelectedFirstOut(selectedFirstOut?.id === analysis.id ? null : analysis)}
+                        className={cn(
+                          'px-3 py-2 text-xs font-medium border-2 transition-colors',
+                          selectedFirstOut?.id === analysis.id
+                            ? 'bg-amber-100 border-amber-500 text-amber-800'
+                            : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
+                        )}
+                      >
+                        <div className="font-semibold">{analysis.incident}</div>
+                        <div className="text-[10px] text-slate-500 mt-0.5">{analysis.duration} ago</div>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Selected Analysis */}
+                  {selectedFirstOut && (
+                    <div className="space-y-4">
+                      {/* Event Timeline */}
+                      <div className="relative">
+                        <div className="absolute left-3 top-0 bottom-0 w-0.5 bg-slate-200" />
+                        <div className="space-y-3">
+                          {selectedFirstOut.events.map((event, idx) => (
+                            <div key={event.alertId} className="relative pl-8">
+                              <div className={cn(
+                                'absolute left-0 w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold border-2',
+                                event.isRootCause
+                                  ? 'bg-red-100 border-red-500 text-red-700'
+                                  : 'bg-white border-slate-300 text-slate-600'
+                              )}>
+                                {event.sequence}
+                              </div>
+                              <div className={cn(
+                                'p-3 border-2',
+                                event.isRootCause ? 'bg-red-50 border-red-300' : 'bg-white border-slate-200'
+                              )}>
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className={cn(
+                                    'text-xs font-semibold',
+                                    event.isRootCause ? 'text-red-700' : 'text-slate-700'
+                                  )}>
+                                    {event.alertType}
+                                    {event.isRootCause && (
+                                      <span className="ml-2 text-[9px] px-1.5 py-0.5 bg-red-600 text-white">ROOT CAUSE</span>
+                                    )}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400">
+                                    {format(event.timestamp, 'HH:mm:ss')}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-4 text-[10px]">
+                                  <span className="text-slate-600">{event.sensorName}</span>
+                                  <span className="font-mono text-slate-700">
+                                    {event.value} {event.unit}
+                                  </span>
+                                  <span className={cn(
+                                    'font-medium',
+                                    event.isRootCause ? 'text-red-600' : 'text-amber-600'
+                                  )}>
+                                    {event.deviation}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* AI Analysis */}
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <div className="bg-slate-50 border border-slate-200 p-3">
+                          <span className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                            <BrainCircuit className="h-3 w-3 inline mr-1" />
+                            AI Analysis
+                          </span>
+                          <p className="text-xs text-slate-700">{selectedFirstOut.aiAnalysis}</p>
+                        </div>
+                        <div className="bg-emerald-50 border border-emerald-200 p-3">
+                          <span className="text-[10px] font-bold uppercase text-emerald-700 block mb-1">
+                            <Zap className="h-3 w-3 inline mr-1" />
+                            Prevention Recommendation
+                          </span>
+                          <p className="text-xs text-emerald-800">{selectedFirstOut.preventionRecommendation}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {!selectedFirstOut && (
+                    <div className="text-center py-8 text-slate-400">
+                      <Eye className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                      <p className="text-sm">Select an incident above to view first-out analysis</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
