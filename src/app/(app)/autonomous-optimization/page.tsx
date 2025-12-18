@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Cpu,
   Zap,
@@ -54,6 +55,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
+import type { CommandRiskLevel } from '@/data/mock-commands';
 
 type TabValue = 'pending' | 'history' | 'analytics';
 type CategoryFilter = 'all' | 'energy' | 'quality' | 'throughput' | 'maintenance';
@@ -79,6 +81,7 @@ const riskColors: Record<string, { bg: string; text: string }> = {
 };
 
 export default function AutonomousOptimizationPage() {
+  const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabValue>('pending');
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
@@ -115,10 +118,27 @@ export default function AutonomousOptimizationPage() {
   }, [activeTab, categoryFilter, plantFilter]);
 
   const handleApprove = (recommendation: OptimizationRecommendation) => {
-    toast.success('Recommendation Approved', {
-      description: `${recommendation.parameterName} will be adjusted to ${recommendation.recommendedValue} ${recommendation.unit}`,
-    });
-    setDetailModalOpen(false);
+    // Navigate to command execution page with full flow visualization
+    const commandData = {
+      type: 'setpoint',
+      equipmentId: recommendation.equipmentId,
+      equipmentName: recommendation.equipmentName,
+      plantId: recommendation.plantId,
+      plantName: recommendation.plantName,
+      parameterName: recommendation.parameterName,
+      currentValue: recommendation.currentValue,
+      targetValue: recommendation.recommendedValue,
+      unit: recommendation.unit,
+      riskLevel: recommendation.riskLevel as CommandRiskLevel,
+      reasoning: recommendation.reasoning,
+      rootCause: recommendation.rootCause, // Pass the root cause/trigger
+      source: 'ai_optimization',
+      expectedOutcome: recommendation.expectedImprovement,
+    };
+
+    // Encode command data and navigate to execution page
+    const encodedData = encodeURIComponent(JSON.stringify(commandData));
+    router.push(`/command-execution?data=${encodedData}`);
   };
 
   const handleReject = (recommendation: OptimizationRecommendation) => {
@@ -883,6 +903,7 @@ export default function AutonomousOptimizationPage() {
           )}
         </DialogContent>
       </Dialog>
+
     </div>
   );
 }

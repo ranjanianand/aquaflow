@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Boxes,
   Play,
@@ -62,6 +63,7 @@ import {
   type SimulationScenario,
 } from '@/data/mock-twin';
 import { mockPlants } from '@/data/mock-plants';
+import type { CommandRiskLevel } from '@/data/mock-commands';
 
 type ViewMode = 'simulation' | 'playback' | 'training';
 
@@ -82,6 +84,7 @@ const outcomeIcons: Record<string, React.ComponentType<{ className?: string }>> 
 };
 
 export default function VirtualTwinPage() {
+  const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>('simulation');
   const [selectedPlant, setSelectedPlant] = useState('plant-1');
@@ -133,6 +136,48 @@ export default function VirtualTwinPage() {
   const hasChanges = useMemo(() => {
     return parameters.some(p => p.simulatedValue !== p.currentValue);
   }, [parameters]);
+
+  // Get changed parameters
+  const changedParameters = useMemo(() => {
+    return parameters.filter(p => p.simulatedValue !== p.currentValue);
+  }, [parameters]);
+
+  // Get selected plant info
+  const currentPlant = mockPlants.find(p => p.id === selectedPlant) || mockPlants[0];
+
+  // Calculate risk level based on change magnitude
+  const getRiskLevel = (param: TwinParameter): CommandRiskLevel => {
+    const changePercent = Math.abs(
+      ((param.simulatedValue - param.currentValue) / param.currentValue) * 100
+    );
+    if (changePercent > 25) return 'high';
+    if (changePercent > 15) return 'medium';
+    return 'low';
+  };
+
+  // Apply parameter to plant - navigate to command execution page
+  const handleApplyParameter = (param: TwinParameter) => {
+    const changePercent = ((param.simulatedValue - param.currentValue) / param.currentValue * 100).toFixed(1);
+    const commandData = {
+      type: 'setpoint',
+      equipmentId: param.id,
+      equipmentName: param.name,
+      plantId: selectedPlant,
+      plantName: currentPlant.name,
+      parameterName: param.name,
+      currentValue: param.currentValue,
+      targetValue: param.simulatedValue,
+      unit: param.unit,
+      riskLevel: getRiskLevel(param),
+      rootCause: `Virtual Twin simulation triggered: Parameter "${param.name}" adjusted from ${param.currentValue} to ${param.simulatedValue} ${param.unit} (${parseFloat(changePercent) > 0 ? '+' : ''}${changePercent}%). Sandbox testing confirmed safe operating range and predicted outcomes.`,
+      reasoning: `Virtual Twin simulation shows this change would optimize ${param.description || 'plant performance'}. Simulated value tested in sandbox environment with positive outcome projections.`,
+      source: 'virtual_twin',
+    };
+
+    // Encode command data and navigate to execution page
+    const encodedData = encodeURIComponent(JSON.stringify(commandData));
+    router.push(`/command-execution?data=${encodedData}`);
+  };
 
   // Toggle category expansion
   const toggleCategory = (category: string) => {
@@ -533,14 +578,24 @@ export default function VirtualTwinPage() {
                               <span className="text-[10px] text-slate-500">
                                 Current: <span className="font-mono font-bold">{param.currentValue} {param.unit}</span>
                               </span>
-                              {hasChanged && (
-                                <button
-                                  onClick={() => handleParameterChange(param.id, param.currentValue)}
-                                  className="text-[10px] text-cyan-600 hover:text-cyan-700 font-medium"
-                                >
-                                  Reset to current
-                                </button>
-                              )}
+                              <div className="flex items-center gap-2">
+                                {hasChanged && (
+                                  <>
+                                    <button
+                                      onClick={() => handleParameterChange(param.id, param.currentValue)}
+                                      className="text-[10px] text-cyan-600 hover:text-cyan-700 font-medium"
+                                    >
+                                      Reset
+                                    </button>
+                                    <button
+                                      onClick={() => handleApplyParameter(param)}
+                                      className="px-2 py-1 text-[10px] font-bold uppercase bg-emerald-600 text-white hover:bg-emerald-700"
+                                    >
+                                      Apply
+                                    </button>
+                                  </>
+                                )}
+                              </div>
                             </div>
                           </div>
                         );
@@ -786,6 +841,7 @@ export default function VirtualTwinPage() {
           </div>
         </DialogContent>
       </Dialog>
+
     </div>
   );
 }

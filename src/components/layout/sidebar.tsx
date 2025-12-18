@@ -108,6 +108,7 @@ const navigation: NavSection[] = [
     title: 'Administration',
     items: [
       { title: 'Plants & Assets', href: '/assets', icon: Building2 },
+      { title: 'Audit Log', href: '/audit-log', icon: FileText },
       { title: 'Knowledge Base', href: '/knowledge', icon: BookOpen },
       { title: 'Reports', href: '/reports', icon: FileText },
       { title: 'Users', href: '/users', icon: Users },
