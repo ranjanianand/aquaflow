@@ -24,7 +24,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 // Users for authentication
 const MOCK_USERS: Record<string, { password: string; user: User }> = {
   'admin@yozytech.com': {
-    password: 'Y0zy@Aqua#2024!',
+    password: 'AquaFlow@dmin#1',
     user: {
       id: 'user-1',
       name: 'Admin User',
