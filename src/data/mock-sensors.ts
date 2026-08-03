@@ -1,4 +1,5 @@
 import { Sensor, SensorReading, SensorType, SensorStatus, SensorCommStatus, SensorPriority } from '@/types';
+import { resolveThresholds, evaluate, ThresholdBand } from '@/lib/thresholds';
 
 // Seeded random number generator for deterministic values
 const seededRandom = (seed: number): number => {
@@ -22,14 +23,18 @@ const generateHistory = (baseValue: number, variance: number, seed: number, coun
   return history;
 };
 
-// Determine status based on thresholds
-const getStatus = (value: number, min: number, max: number): SensorStatus => {
-  if (value < min || value > max) return 'critical';
-  const range = max - min;
-  const warningBuffer = range * 0.1;
-  if (value < min + warningBuffer || value > max - warningBuffer) return 'warning';
-  return 'normal';
-};
+// Determine status from the sensor's own warning/critical bands
+const getStatus = (value: number, band: ThresholdBand): SensorStatus =>
+  evaluate(value, band);
+
+// Reconstruct a sensor's band from its stored limits. Falls back to the
+// warning edges when a fixture predates the critical tier.
+const bandOf = (s: Sensor): ThresholdBand => ({
+  warnMin: s.minThreshold,
+  warnMax: s.maxThreshold,
+  critMin: s.critMin ?? s.minThreshold,
+  critMax: s.critMax ?? s.maxThreshold,
+});
 
 // Sensor configurations by type
 const sensorConfigs: Record<SensorType, { unit: string; min: number; max: number; base: number; setpoint: number; variance: number }> = {
@@ -158,30 +163,34 @@ const generateSensorsForPlant = (plantId: string): Sensor[] => {
     // Deterministic seed based on plant and sensor index
     const seed = plantId.charCodeAt(plantId.length - 1) * 1000 + i;
 
-    // Generate value with some variation
-    const valueVariation = (seededRandom(seed) - 0.5) * sensorConfig.variance * 1.5;
-    let currentValue = parseFloat((sensorConfig.base + valueVariation).toFixed(2));
+    // Alarm limits come from where this sensor sits in the treatment train,
+    // not from its parameter alone — a raw-water turbidity probe and an
+    // outlet probe read the same units but mean very different things.
+    const band = resolveThresholds(type, location);
 
-    // Clamp to reasonable bounds
-    currentValue = Math.max(sensorConfig.min * 0.9, Math.min(sensorConfig.max * 1.1, currentValue));
+    // Centre the value on the middle of this sensor's own operating band so
+    // a raw intake reads as a healthy raw intake, not as an outlet failure.
+    const bandCentre = (band.warnMin + band.warnMax) / 2;
+    const bandSpread = (band.warnMax - band.warnMin) / 2;
+    const valueVariation = (seededRandom(seed) - 0.5) * bandSpread * 1.2;
+    let currentValue = parseFloat((bandCentre + valueVariation).toFixed(2));
 
-    let status = getStatus(currentValue, sensorConfig.min, sensorConfig.max);
+    let status = getStatus(currentValue, band);
 
-    // Apply status distribution for variety
+    // Apply status distribution so the demo shows a realistic mix
     status = getStatusDistribution(seed, status);
 
-    // Adjust value if status was changed
-    if (status === 'critical' && currentValue >= sensorConfig.min && currentValue <= sensorConfig.max) {
+    // Move the value to actually sit in the band the status claims
+    if (status === 'critical') {
       currentValue = seededRandom(seed + 100) > 0.5
-        ? sensorConfig.max * 1.05
-        : sensorConfig.min * 0.95;
+        ? band.critMax + Math.max(band.critMax * 0.05, 0.05)
+        : Math.max(0, band.critMin - Math.max(band.critMin * 0.05, 0.05));
       currentValue = parseFloat(currentValue.toFixed(2));
-    } else if (status === 'warning' && currentValue >= sensorConfig.min + (sensorConfig.max - sensorConfig.min) * 0.15 && currentValue <= sensorConfig.max - (sensorConfig.max - sensorConfig.min) * 0.15) {
-      const range = sensorConfig.max - sensorConfig.min;
+    } else if (status === 'warning') {
+      // Between the warning and critical edges
       currentValue = seededRandom(seed + 200) > 0.5
-        ? sensorConfig.max - range * 0.08
-        : sensorConfig.min + range * 0.08;
-      currentValue = parseFloat(currentValue.toFixed(2));
+        ? parseFloat(((band.warnMax + band.critMax) / 2).toFixed(2))
+        : parseFloat(((band.warnMin + band.critMin) / 2).toFixed(2));
     }
 
     // Determine priority
@@ -203,13 +212,17 @@ const generateSensorsForPlant = (plantId: string): Sensor[] => {
       type,
       unit: sensorConfig.unit,
       currentValue,
-      minThreshold: sensorConfig.min,
-      maxThreshold: sensorConfig.max,
+      minThreshold: band.warnMin,
+      maxThreshold: band.warnMax,
+      critMin: band.critMin,
+      critMax: band.critMax,
       setpoint: sensorConfig.setpoint,
       status,
       commStatus: isOfflinePlant ? 'offline' : getCommStatus(lastUpdated),
       lastUpdated,
-      history: generateHistory(sensorConfig.base, sensorConfig.variance, seed),
+      dataSource: 'file',
+      quality: 'good',
+      history: generateHistory(bandCentre, bandSpread * 0.6, seed),
       priority,
       location,
       tag: generateTag(type, plantId, typeIndex[type] - 1),
@@ -305,10 +318,12 @@ export const updateSensorValue = (sensorId: string): Sensor | undefined => {
   const sensor = mockSensors.find(s => s.id === sensorId);
   if (!sensor) return undefined;
 
-  const config = sensorConfigs[sensor.type];
-  const change = (Math.random() - 0.5) * config.variance * 0.2;
+  // Drift proportionally to this sensor's own band, not the parameter default —
+  // a raw intake and an outlet probe span very different ranges.
+  const band = bandOf(sensor);
+  const change = (Math.random() - 0.5) * (band.warnMax - band.warnMin) * 0.06;
   sensor.currentValue = parseFloat((sensor.currentValue + change).toFixed(2));
-  sensor.status = getStatus(sensor.currentValue, sensor.minThreshold, sensor.maxThreshold);
+  sensor.status = getStatus(sensor.currentValue, band);
   sensor.lastUpdated = new Date();
   sensor.commStatus = 'online';
 
@@ -330,10 +345,10 @@ export const updateAllSensorsForPlant = (plantId: string): Sensor[] => {
   plantSensors.forEach(sensor => {
     if (sensor.plantId === 'plant-6') return; // Skip offline plant
 
-    const config = sensorConfigs[sensor.type];
-    const change = (Math.random() - 0.5) * config.variance * 0.15;
+    const band = bandOf(sensor);
+    const change = (Math.random() - 0.5) * (band.warnMax - band.warnMin) * 0.05;
     sensor.currentValue = parseFloat((sensor.currentValue + change).toFixed(2));
-    sensor.status = getStatus(sensor.currentValue, sensor.minThreshold, sensor.maxThreshold);
+    sensor.status = getStatus(sensor.currentValue, band);
     sensor.lastUpdated = new Date();
     sensor.commStatus = 'online';
 

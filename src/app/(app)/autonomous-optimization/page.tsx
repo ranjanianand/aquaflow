@@ -56,6 +56,8 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import type { CommandRiskLevel } from '@/data/mock-commands';
+import { FEATURES } from '@/lib/features';
+import { FeatureDisabled } from '@/components/shared/feature-disabled';
 
 type TabValue = 'pending' | 'history' | 'analytics';
 type CategoryFilter = 'all' | 'energy' | 'quality' | 'throughput' | 'maintenance';
@@ -80,7 +82,7 @@ const riskColors: Record<string, { bg: string; text: string }> = {
   high: { bg: 'bg-red-100', text: 'text-red-700' },
 };
 
-export default function AutonomousOptimizationPage() {
+function AutonomousOptimizationContent() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabValue>('pending');
@@ -906,4 +908,18 @@ export default function AutonomousOptimizationPage() {
 
     </div>
   );
+}
+
+// Gated: see lib/features.ts
+export default function AutonomousOptimizationPage() {
+  if (!FEATURES.autonomousOptimization) {
+    return (
+      <FeatureDisabled
+        title="Autonomous optimisation is not available"
+        reason="This screen produces setpoint changes and applies them to plant equipment. Readings reach the platform as JSON files exported into object storage, which is a one-way path — there is no channel back into the PLCs for an optimisation to act through."
+        requirement="A control path to the plant. It could alternatively ship as advisory-only, recommending changes an operator applies by hand."
+      />
+    );
+  }
+  return <AutonomousOptimizationContent />;
 }

@@ -18,7 +18,15 @@ export type SensorStatus = 'normal' | 'warning' | 'critical';
 
 export type SensorPriority = 'low' | 'medium' | 'high' | 'critical';
 
-export type DataSource = 'sensor' | 'manual' | 'calculated';
+/**
+ * Where a value came from.
+ * 'file' covers readings ingested from a gateway export dropped in object
+ * storage, as opposed to a live sensor session.
+ */
+export type DataSource = 'sensor' | 'file' | 'manual' | 'calculated';
+
+/** Quality of an ingested reading, following OPC-UA convention. */
+export type ReadingQuality = 'good' | 'uncertain' | 'bad';
 
 export type AlertSeverity = 'critical' | 'warning' | 'info';
 
@@ -53,8 +61,20 @@ export interface Sensor {
   type: SensorType;
   unit: string;
   currentValue: number;
+  /**
+   * Normal operating range — outside this is a warning.
+   * Resolved per sensor from its stage, not shared across the parameter.
+   * @see lib/thresholds.ts
+   */
   minThreshold: number;
   maxThreshold: number;
+  /**
+   * Outside this is critical. Always wider than the warning band.
+   * Optional so existing fixtures remain valid; treated as the warning band
+   * when absent.
+   */
+  critMin?: number;
+  critMax?: number;
   setpoint?: number; // Target operational value
   status: SensorStatus;
   commStatus: SensorCommStatus;
@@ -63,6 +83,10 @@ export interface Sensor {
   priority: SensorPriority;
   location?: string; // e.g., "Inlet", "Outlet", "Tank A"
   tag?: string; // e.g., "TUR-001", "PH-002"
+  /** Where the current value came from. Defaults to 'sensor' when absent. */
+  dataSource?: DataSource;
+  /** Quality of the current value. Defaults to 'good' when absent. */
+  quality?: ReadingQuality;
 }
 
 export interface ManualReading {
@@ -156,13 +180,29 @@ export interface Notification {
   link?: string;
 }
 
+/**
+ * What an alert rule applies to.
+ * 'sensor' targets one instrument and always wins over a parameter default —
+ * this is what lets a raw-water turbidity probe and an outlet probe carry
+ * different limits.
+ */
+export type AlertRuleScope = 'sensor' | 'parameter';
+
 export interface AlertRule {
   id: string;
   name: string;
+  /** Defaults to 'parameter' when absent, matching earlier fixtures. */
+  scope?: AlertRuleScope;
+  /** Required when scope is 'sensor'. */
+  sensorId?: string;
+  /** Required when scope is 'parameter'; the plant-wide fallback. */
   sensorType: SensorType;
   condition: 'above' | 'below' | 'equals' | 'between';
   threshold: number;
   thresholdMax?: number;
+  /** Critical band. When absent, the rule has only a warning tier. */
+  criticalThreshold?: number;
+  criticalThresholdMax?: number;
   severity: AlertSeverity;
   enabled: boolean;
   notifyChannels: ('email' | 'sms' | 'whatsapp' | 'push')[];

@@ -45,6 +45,7 @@ import {
 } from '@/components/ui/tooltip';
 import { useAuth } from '@/contexts/auth-context';
 import { getActiveAlertsCount } from '@/data/mock-alerts';
+import { isRouteEnabled } from '@/lib/features';
 
 interface NavItem {
   title: string;
@@ -58,7 +59,7 @@ interface NavSection {
   items: NavItem[];
 }
 
-const navigation: NavSection[] = [
+const allNavigation: NavSection[] = [
   {
     title: 'Overview',
     items: [
@@ -116,6 +117,17 @@ const navigation: NavSection[] = [
     ],
   },
 ];
+
+/**
+ * Hide anything whose feature is switched off, and drop sections left empty
+ * as a result — a heading with nothing under it reads as a loading bug.
+ */
+const navigation: NavSection[] = allNavigation
+  .map((section) => ({
+    ...section,
+    items: section.items.filter((item) => isRouteEnabled(item.href)),
+  }))
+  .filter((section) => section.items.length > 0);
 
 interface SidebarProps {
   collapsed: boolean;

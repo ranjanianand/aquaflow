@@ -26,6 +26,8 @@ import {
   FileText,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { FEATURES } from '@/lib/features';
+import { FeatureDisabled } from '@/components/shared/feature-disabled';
 import {
   type CommandResult,
   getRiskDisplay,
@@ -731,5 +733,17 @@ function CommandExecutionContent() {
   );
 }
 
-// Export the component directly - no Suspense needed since we use window.location
-export default CommandExecutionContent;
+// Gated: sending commands needs a write path back to the PLCs, which the
+// file-ingestion pipeline does not provide.
+export default function CommandExecutionPage() {
+  if (!FEATURES.writeBack) {
+    return (
+      <FeatureDisabled
+        title="Command execution is not available"
+        reason="Plant readings reach this platform as JSON files exported into object storage. That path is one-way — there is no channel back into the PLCs, so a command issued here would never arrive at the equipment."
+        requirement="A control path to the plant, with its own safety review and operator sign-off."
+      />
+    );
+  }
+  return <CommandExecutionContent />;
+}

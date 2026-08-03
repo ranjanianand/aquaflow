@@ -32,6 +32,8 @@ import { RiskMatrix } from '@/components/predictive/risk-matrix';
 import { CostImpactAnalysis } from '@/components/predictive/cost-impact-analysis';
 import { HealthScoreTrends } from '@/components/predictive/health-score-trends';
 import { PredictiveSkeleton } from '@/components/shared/loading-skeleton';
+import { FEATURES } from '@/lib/features';
+import { FeatureDisabled } from '@/components/shared/feature-disabled';
 
 interface PredictionResult {
   id: string;
@@ -173,7 +175,7 @@ const generateAnomalyChartData = () => {
 
 const anomalyChartData = generateAnomalyChartData();
 
-export default function PredictivePage() {
+function PredictiveContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedPlant, setSelectedPlant] = useState('all');
 
@@ -586,4 +588,18 @@ export default function PredictivePage() {
       </div>
     </div>
   );
+}
+
+// Gated: see lib/features.ts
+export default function PredictivePage() {
+  if (!FEATURES.predictive) {
+    return (
+      <FeatureDisabled
+        title="Predictive maintenance is not available yet"
+        reason="Failure predictions need months of accumulated equipment history before their output means anything. The platform has only just begun ingesting real readings, so any figure shown here would be invented rather than measured."
+        requirement="Several months of stored equipment readings. This turns on by itself once the history exists."
+      />
+    );
+  }
+  return <PredictiveContent />;
 }
