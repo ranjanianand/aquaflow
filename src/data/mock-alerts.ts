@@ -1,331 +1,229 @@
-import { Alert, AlertSeverity, AlertStatus } from '@/types';
+import { Alert, AlertSeverity, AlertStatus, Sensor, SensorType } from '@/types';
+import { mockSensors } from '@/data/mock-sensors';
+import { mockPlants } from '@/data/mock-plants';
 
-// Helper to create dates relative to now
-const hoursAgo = (hours: number): Date => new Date(Date.now() - hours * 3600000);
+/**
+ * Alerts are derived from the sensors, not authored by hand.
+ *
+ * Hand-written fixtures drift: the alarm list said one thing while the sensor
+ * grid said another, and a threshold change fixed one without touching the
+ * other. Deriving them means the badge, the ticker, the alarm page and the
+ * ingestion screen all read from the same bands.
+ *
+ * This is also how the real system behaves — alarms are a consequence of a
+ * reading crossing its sensor's limit, never a separate list to maintain.
+ */
+
 const minutesAgo = (minutes: number): Date => new Date(Date.now() - minutes * 60000);
-const daysAgo = (days: number): Date => new Date(Date.now() - days * 24 * 3600000);
+const hoursAgo = (hours: number): Date => new Date(Date.now() - hours * 3600000);
 
-export const mockAlerts: Alert[] = [
-  // Active Critical Alerts
-  {
-    id: 'alert-1',
-    plantId: 'plant-3',
-    plantName: 'Delhi WTP-03',
-    sensorId: 'plant-3-sensor-1',
-    sensorName: 'pH Sensor 1',
-    type: 'High pH Level',
-    severity: 'critical',
-    message: 'pH level exceeded maximum threshold of 8.5',
-    value: 8.7,
-    threshold: 8.5,
-    unit: 'pH',
+const plantName = (plantId: string): string =>
+  mockPlants.find((p) => p.id === plantId)?.name ?? plantId;
+
+/** Deterministic pseudo-random, so alert ages are stable across renders. */
+const seeded = (n: number): number => {
+  const x = Math.sin(n * 7.13) * 10000;
+  return x - Math.floor(x);
+};
+
+/**
+ * Which warnings are worth waking someone for.
+ *
+ * Every sensor outside its band is a warning, but surfacing all of them is
+ * alarm flood — the failure mode this whole exercise exists to avoid.
+ * Criticals always raise; warnings only on the parameters that carry
+ * compliance or public-health consequences.
+ */
+const WARN_WORTHY: SensorType[] = ['turbidity', 'chlorine', 'pH'];
+
+const PARAMETER_LABEL: Record<SensorType, string> = {
+  pH: 'pH',
+  flow: 'Flow',
+  pressure: 'Pressure',
+  temperature: 'Temperature',
+  turbidity: 'Turbidity',
+  chlorine: 'Chlorine',
+  DO: 'Dissolved Oxygen',
+  level: 'Level',
+  conductivity: 'Conductivity',
+  ORP: 'ORP',
+};
+
+function describe(sensor: Sensor): {
+  type: string;
+  threshold: number;
+  direction: 'High' | 'Low';
+} {
+  const critMax = sensor.critMax ?? sensor.maxThreshold;
+  const critMin = sensor.critMin ?? sensor.minThreshold;
+  const label = PARAMETER_LABEL[sensor.type];
+
+  if (sensor.status === 'critical') {
+    const high = sensor.currentValue > critMax;
+    return {
+      type: `${high ? 'High' : 'Low'} ${label}`,
+      threshold: high ? critMax : critMin,
+      direction: high ? 'High' : 'Low',
+    };
+  }
+  const high = sensor.currentValue > sensor.maxThreshold;
+  return {
+    type: `${high ? 'High' : 'Low'} ${label}`,
+    threshold: high ? sensor.maxThreshold : sensor.minThreshold,
+    direction: high ? 'High' : 'Low',
+  };
+}
+
+function toAlert(sensor: Sensor, index: number): Alert {
+  const { type, threshold } = describe(sensor);
+  const severity: AlertSeverity = sensor.status === 'critical' ? 'critical' : 'warning';
+
+  // Criticals are recent; warnings have usually been standing a while.
+  const ageMinutes =
+    severity === 'critical'
+      ? Math.round(3 + seeded(index) * 90)
+      : Math.round(30 + seeded(index + 500) * 600);
+
+  const duration =
+    ageMinutes < 60
+      ? `${ageMinutes} mins`
+      : `${Math.round(ageMinutes / 60)} hour${ageMinutes >= 120 ? 's' : ''}`;
+
+  return {
+    id: `alert-${sensor.id}`,
+    plantId: sensor.plantId,
+    plantName: plantName(sensor.plantId),
+    sensorId: sensor.id,
+    sensorName: sensor.tag ? `${sensor.tag} · ${sensor.location}` : sensor.name,
+    type,
+    severity,
+    message:
+      `${PARAMETER_LABEL[sensor.type]} ${sensor.currentValue} ${sensor.unit} ` +
+      `is outside the ${severity} limit of ${threshold} ${sensor.unit} at ${sensor.location}`,
+    value: sensor.currentValue,
+    threshold,
+    unit: sensor.unit,
     status: 'active',
-    createdAt: minutesAgo(15),
-    duration: '15 mins',
-  },
-  {
-    id: 'alert-2',
-    plantId: 'plant-6',
-    plantName: 'Pune WTP-06',
-    sensorId: 'plant-6-sensor-2',
-    sensorName: 'Flow Sensor 1',
+    createdAt: minutesAgo(ageMinutes),
+    duration,
+  };
+}
+
+/** A sensor whose comms have stopped is an alarm in its own right. */
+function commsAlert(sensor: Sensor, index: number): Alert {
+  const ageMinutes = Math.round(60 + seeded(index + 900) * 180);
+  return {
+    id: `alert-comms-${sensor.id}`,
+    plantId: sensor.plantId,
+    plantName: plantName(sensor.plantId),
+    sensorId: sensor.id,
+    sensorName: sensor.tag ? `${sensor.tag} · ${sensor.location}` : sensor.name,
     type: 'Communication Lost',
     severity: 'critical',
-    message: 'No data received from sensor for over 60 minutes',
+    message: `No file containing ${sensor.tag ?? sensor.name} has been received for over an hour`,
     value: 0,
     threshold: 0,
     unit: '',
     status: 'active',
-    createdAt: hoursAgo(1),
-    duration: '1 hour',
-  },
-  {
-    id: 'alert-3',
-    plantId: 'plant-1',
-    plantName: 'Chennai WTP-01',
-    sensorId: 'plant-1-sensor-5',
-    sensorName: 'Turbidity Sensor 1',
-    type: 'High Turbidity',
-    severity: 'critical',
-    message: 'Turbidity level exceeded maximum threshold of 4.0 NTU',
-    value: 4.8,
-    threshold: 4.0,
-    unit: 'NTU',
-    status: 'active',
-    createdAt: minutesAgo(8),
-    duration: '8 mins',
-  },
+    createdAt: minutesAgo(ageMinutes),
+    duration: `${Math.round(ageMinutes / 60)} hours`,
+  };
+}
 
-  // Active Warning Alerts
-  {
-    id: 'alert-4',
-    plantId: 'plant-2',
-    plantName: 'Mumbai WTP-02',
-    sensorId: 'plant-2-sensor-3',
-    sensorName: 'Pressure Sensor 1',
-    type: 'Low Pressure Warning',
-    severity: 'warning',
-    message: 'Pressure approaching minimum threshold',
-    value: 2.3,
-    threshold: 2.0,
-    unit: 'bar',
-    status: 'active',
-    createdAt: minutesAgo(45),
-    duration: '45 mins',
-  },
-  {
-    id: 'alert-5',
-    plantId: 'plant-4',
-    plantName: 'Bangalore WTP-04',
-    sensorId: 'plant-4-sensor-6',
-    sensorName: 'Chlorine Sensor 1',
-    type: 'Low Chlorine Level',
-    severity: 'warning',
-    message: 'Chlorine level approaching minimum threshold',
-    value: 0.25,
-    threshold: 0.2,
-    unit: 'mg/L',
-    status: 'active',
-    createdAt: hoursAgo(2),
-    duration: '2 hours',
-  },
+const activeAlerts: Alert[] = mockSensors
+  .filter(
+    (s) =>
+      s.status === 'critical' ||
+      (s.status === 'warning' && WARN_WORTHY.includes(s.type))
+  )
+  .map(toAlert);
 
-  // Acknowledged Alerts
-  {
-    id: 'alert-6',
-    plantId: 'plant-1',
-    plantName: 'Chennai WTP-01',
-    sensorId: 'plant-1-sensor-4',
-    sensorName: 'Temperature Sensor 1',
-    type: 'High Temperature',
-    severity: 'warning',
-    message: 'Temperature exceeded warning threshold',
-    value: 33,
-    threshold: 30,
-    unit: '°C',
-    status: 'acknowledged',
-    createdAt: hoursAgo(3),
-    acknowledgedAt: hoursAgo(2.5),
-    acknowledgedBy: 'Rahul Kumar',
-    duration: '3 hours',
-  },
-  {
-    id: 'alert-7',
-    plantId: 'plant-2',
-    plantName: 'Mumbai WTP-02',
-    sensorId: 'plant-2-sensor-1',
-    sensorName: 'pH Sensor 1',
-    type: 'pH Fluctuation',
-    severity: 'info',
-    message: 'pH showing unusual fluctuation patterns',
-    value: 7.1,
-    threshold: 7.0,
-    unit: 'pH',
-    status: 'acknowledged',
-    createdAt: hoursAgo(5),
-    acknowledgedAt: hoursAgo(4),
-    acknowledgedBy: 'Priya Sharma',
-    duration: '5 hours',
-  },
-  {
-    id: 'alert-8',
-    plantId: 'plant-3',
-    plantName: 'Delhi WTP-03',
-    sensorId: 'plant-3-sensor-2',
-    sensorName: 'Flow Sensor 1',
-    type: 'Flow Rate Variation',
-    severity: 'warning',
-    message: 'Flow rate showing significant variation',
-    value: 280,
-    threshold: 250,
-    unit: 'm³/h',
-    status: 'acknowledged',
-    createdAt: hoursAgo(6),
-    acknowledgedAt: hoursAgo(5.5),
-    acknowledgedBy: 'Amit Singh',
-    duration: '6 hours',
-  },
-  {
-    id: 'alert-9',
-    plantId: 'plant-5',
-    plantName: 'Hyderabad WTP-05',
-    sensorId: 'plant-5-sensor-6',
-    sensorName: 'Level Sensor 1',
-    type: 'Tank Level Low',
-    severity: 'warning',
-    message: 'Storage tank level below optimal range',
-    value: 28,
-    threshold: 30,
-    unit: '%',
-    status: 'acknowledged',
-    createdAt: hoursAgo(8),
-    acknowledgedAt: hoursAgo(7),
-    acknowledgedBy: 'Rahul Kumar',
-    duration: '8 hours',
-  },
-  {
-    id: 'alert-10',
-    plantId: 'plant-4',
-    plantName: 'Bangalore WTP-04',
-    sensorId: 'plant-4-sensor-4',
-    sensorName: 'Temperature Sensor 1',
-    type: 'Temperature Spike',
-    severity: 'info',
-    message: 'Brief temperature spike detected',
-    value: 32,
-    threshold: 30,
-    unit: '°C',
-    status: 'acknowledged',
-    createdAt: hoursAgo(10),
-    acknowledgedAt: hoursAgo(9),
-    acknowledgedBy: 'Priya Sharma',
-    duration: '10 hours',
-  },
+// One plant is simulated as having lost its feed; report it once per plant
+// rather than 25 times, because a missing file is a plant-level fact.
+const offlinePlants = Array.from(
+  new Set(mockSensors.filter((s) => s.commStatus === 'offline').map((s) => s.plantId))
+);
+const commsAlerts: Alert[] = offlinePlants.map((pid, i) => {
+  const first = mockSensors.find((s) => s.plantId === pid)!;
+  return commsAlert(first, i);
+});
 
-  // Resolved Alerts (last 7 days)
-  {
-    id: 'alert-11',
-    plantId: 'plant-1',
-    plantName: 'Chennai WTP-01',
-    sensorId: 'plant-1-sensor-1',
-    sensorName: 'pH Sensor 1',
-    type: 'pH Imbalance',
-    severity: 'critical',
-    message: 'pH level exceeded threshold',
-    value: 8.8,
-    threshold: 8.5,
-    unit: 'pH',
-    status: 'resolved',
-    createdAt: daysAgo(1),
-    acknowledgedAt: daysAgo(1),
-    acknowledgedBy: 'Rahul Kumar',
-    resolvedAt: daysAgo(1),
-    resolvedBy: 'System Auto-Resolve',
-    duration: '45 mins',
-  },
-  {
-    id: 'alert-12',
-    plantId: 'plant-2',
-    plantName: 'Mumbai WTP-02',
-    sensorId: 'plant-2-sensor-5',
-    sensorName: 'Turbidity Sensor 1',
-    type: 'High Turbidity',
-    severity: 'warning',
-    message: 'Turbidity level elevated',
-    value: 3.5,
-    threshold: 3.0,
-    unit: 'NTU',
-    status: 'resolved',
-    createdAt: daysAgo(2),
-    acknowledgedAt: daysAgo(2),
-    acknowledgedBy: 'Priya Sharma',
-    resolvedAt: daysAgo(2),
-    resolvedBy: 'Priya Sharma',
-    duration: '2 hours',
-  },
-  {
-    id: 'alert-13',
-    plantId: 'plant-3',
-    plantName: 'Delhi WTP-03',
-    sensorId: 'plant-3-sensor-3',
-    sensorName: 'Pressure Sensor 1',
-    type: 'Pressure Drop',
-    severity: 'critical',
-    message: 'Sudden pressure drop detected',
-    value: 1.5,
-    threshold: 2.0,
-    unit: 'bar',
-    status: 'resolved',
-    createdAt: daysAgo(3),
-    acknowledgedAt: daysAgo(3),
-    acknowledgedBy: 'Amit Singh',
-    resolvedAt: daysAgo(3),
-    resolvedBy: 'Amit Singh',
-    duration: '30 mins',
-  },
-  {
-    id: 'alert-14',
-    plantId: 'plant-4',
-    plantName: 'Bangalore WTP-04',
-    sensorId: 'plant-4-sensor-2',
-    sensorName: 'Flow Sensor 1',
-    type: 'Flow Anomaly',
-    severity: 'info',
-    message: 'Unusual flow pattern detected',
-    value: 420,
-    threshold: 400,
-    unit: 'm³/h',
-    status: 'resolved',
-    createdAt: daysAgo(4),
-    acknowledgedAt: daysAgo(4),
-    acknowledgedBy: 'Rahul Kumar',
-    resolvedAt: daysAgo(4),
-    resolvedBy: 'System Auto-Resolve',
-    duration: '1 hour',
-  },
-  {
-    id: 'alert-15',
-    plantId: 'plant-5',
-    plantName: 'Hyderabad WTP-05',
-    sensorId: 'plant-5-sensor-1',
-    sensorName: 'pH Sensor 1',
-    type: 'pH Warning',
-    severity: 'warning',
-    message: 'pH trending towards upper limit',
-    value: 8.2,
-    threshold: 8.0,
-    unit: 'pH',
-    status: 'resolved',
-    createdAt: daysAgo(5),
-    acknowledgedAt: daysAgo(5),
-    acknowledgedBy: 'Priya Sharma',
-    resolvedAt: daysAgo(5),
-    resolvedBy: 'Priya Sharma',
-    duration: '4 hours',
-  },
+/**
+ * A short history so the acknowledged and resolved views are not empty.
+ * Derived from real sensors so the tags and locations stay consistent.
+ */
+const historicalAlerts: Alert[] = mockSensors
+  .filter((s) => s.status === 'normal' && WARN_WORTHY.includes(s.type))
+  .slice(0, 8)
+  .map((sensor, i) => {
+    const resolved = i % 2 === 0;
+    const openedHours = 4 + i * 3;
+    const base = toAlert(sensor, i + 2000);
+    return {
+      ...base,
+      id: `alert-hist-${sensor.id}`,
+      status: (resolved ? 'resolved' : 'acknowledged') as AlertStatus,
+      createdAt: hoursAgo(openedHours),
+      acknowledgedAt: hoursAgo(openedHours - 1),
+      acknowledgedBy: ['Amit Singh', 'Ananya Reddy', 'Admin User'][i % 3],
+      ...(resolved
+        ? {
+            resolvedAt: hoursAgo(openedHours - 2),
+            resolvedBy: ['Amit Singh', 'Ananya Reddy'][i % 2],
+          }
+        : {}),
+      duration: `${openedHours} hours`,
+    };
+  });
+
+export const mockAlerts: Alert[] = [
+  ...commsAlerts,
+  ...activeAlerts.sort((a, b) =>
+    a.severity === b.severity ? 0 : a.severity === 'critical' ? -1 : 1
+  ),
+  ...historicalAlerts,
 ];
 
 export const getAlertsByStatus = (status: AlertStatus): Alert[] => {
-  return mockAlerts.filter(alert => alert.status === status);
+  return mockAlerts.filter((a) => a.status === status);
 };
 
 export const getAlertsBySeverity = (severity: AlertSeverity): Alert[] => {
-  return mockAlerts.filter(alert => alert.severity === severity);
+  return mockAlerts.filter((a) => a.severity === severity);
 };
 
 export const getAlertsByPlant = (plantId: string): Alert[] => {
-  return mockAlerts.filter(alert => alert.plantId === plantId);
+  return mockAlerts.filter((a) => a.plantId === plantId);
 };
 
 export const getActiveAlerts = (): Alert[] => {
-  return mockAlerts.filter(alert => alert.status === 'active');
+  return mockAlerts.filter((a) => a.status === 'active');
 };
 
 export const getActiveAlertsCount = (): number => {
-  return mockAlerts.filter(alert => alert.status === 'active').length;
+  return getActiveAlerts().length;
 };
 
 export const getCriticalAlertsCount = (): number => {
-  return mockAlerts.filter(alert => alert.severity === 'critical' && alert.status === 'active').length;
+  return mockAlerts.filter((a) => a.status === 'active' && a.severity === 'critical').length;
 };
 
 export const getAlertById = (id: string): Alert | undefined => {
-  return mockAlerts.find(alert => alert.id === id);
+  return mockAlerts.find((a) => a.id === id);
 };
 
-// Stats
 export const getAlertStats = () => {
-  const active = mockAlerts.filter(a => a.status === 'active');
-  const acknowledged = mockAlerts.filter(a => a.status === 'acknowledged');
-  const resolved = mockAlerts.filter(a => a.status === 'resolved');
-
+  const active = getActiveAlerts();
   return {
-    active: active.length,
-    acknowledged: acknowledged.length,
-    resolved: resolved.length,
     total: mockAlerts.length,
-    critical: active.filter(a => a.severity === 'critical').length,
-    warning: active.filter(a => a.severity === 'warning').length,
-    info: active.filter(a => a.severity === 'info').length,
+    active: active.length,
+    critical: active.filter((a) => a.severity === 'critical').length,
+    warning: active.filter((a) => a.severity === 'warning').length,
+    // Retained for the alarm page's filter row. Derived alarms are only ever
+    // warning or critical — an informational tier would come from operator
+    // annotations, not from a threshold breach.
+    info: active.filter((a) => a.severity === 'info').length,
+    acknowledged: mockAlerts.filter((a) => a.status === 'acknowledged').length,
+    resolved: mockAlerts.filter((a) => a.status === 'resolved').length,
   };
 };
