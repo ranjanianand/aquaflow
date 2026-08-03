@@ -13,7 +13,13 @@ import { SensorType } from '@/types';
  * plausibility bound: a pH of 15 is a broken probe anywhere.
  */
 
-export type ProcessStage = 'raw' | 'treatment' | 'final';
+/**
+ * 'filtered' is separate from 'treatment' deliberately. Filter effluent is the
+ * regulatory control point in drinking water — it is held to the same turbidity
+ * limit as finished water, not to the looser mid-process one. Folding filters
+ * into 'treatment' lets a failing filter pass silently.
+ */
+export type ProcessStage = 'raw' | 'treatment' | 'filtered' | 'final';
 
 export interface ThresholdBand {
   /** Normal operating range. Outside this → warning. */
@@ -33,14 +39,21 @@ const FINAL_HINTS = [
   'elevated', 'contact', 'permeate', 'booster', 'main', 'remineral', 'ground storage',
 ];
 
+/** Anything producing filtered water — its effluent meets finished-water limits. */
+const FILTER_HINTS = [
+  'filter', 'membrane', 'carbon', 'ro stage', 'ultrafiltration', 'softening',
+];
+
 /**
- * Classify a sensor's location into a treatment stage. Anything that is
- * neither clearly upstream nor clearly downstream is mid-process.
+ * Classify a sensor's location into a treatment stage.
+ * Order matters: a "Clear Water Tank" downstream of filters is final, and a
+ * filter is checked before falling through to generic mid-process.
  */
 export function classifyStage(location?: string): ProcessStage {
   if (!location) return 'treatment';
   const l = location.toLowerCase();
   if (FINAL_HINTS.some((h) => l.includes(h))) return 'final';
+  if (FILTER_HINTS.some((h) => l.includes(h))) return 'filtered';
   if (RAW_HINTS.some((h) => l.includes(h))) return 'raw';
   return 'treatment';
 }
@@ -71,18 +84,21 @@ const STAGE_OVERRIDES: Partial<
     raw:       { warnMin: 0, warnMax: 20,  critMin: 0, critMax: 50 },
     // Post-clarifier, pre-filter.
     treatment: { warnMin: 0, warnMax: 5.0, critMin: 0, critMax: 10 },
-    // Filtered water. 0.3 NTU is the regulatory line most utilities work to.
+    // Filter effluent — 0.3 NTU is the line most utilities are held to.
+    filtered:  { warnMin: 0, warnMax: 0.3, critMin: 0, critMax: 0.5 },
     final:     { warnMin: 0, warnMax: 0.3, critMin: 0, critMax: 0.5 },
   },
   pH: {
     raw:       { warnMin: 6.0, warnMax: 9.0, critMin: 5.5, critMax: 9.5 },
     // Coagulation deliberately depresses pH.
     treatment: { warnMin: 6.0, warnMax: 8.5, critMin: 5.5, critMax: 9.0 },
+    filtered:  { warnMin: 6.5, warnMax: 8.5, critMin: 6.0, critMax: 9.0 },
     final:     { warnMin: 6.5, warnMax: 8.5, critMin: 6.0, critMax: 9.0 },
   },
   chlorine: {
     // Residual is only meaningful after dosing.
     treatment: { warnMin: 0.2, warnMax: 3.0, critMin: 0.1, critMax: 5.0 },
+    filtered:  { warnMin: 0.2, warnMax: 3.0, critMin: 0.1, critMax: 5.0 },
     final:     { warnMin: 0.2, warnMax: 2.0, critMin: 0.1, critMax: 4.0 },
   },
   conductivity: {

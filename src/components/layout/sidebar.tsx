@@ -35,6 +35,7 @@ import {
   Sparkles,
   Bot,
   Layers,
+  Filter,
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
@@ -73,6 +74,7 @@ const allNavigation: NavSection[] = [
     title: 'Operations',
     items: [
       { title: 'Real-Time', href: '/monitoring', icon: Activity },
+      { title: 'Data Pipeline', href: '/data-pipeline', icon: Filter },
       { title: 'Maintenance', href: '/service-monitor', icon: Wrench },
       { title: 'Asset Health', href: '/asset-monitor', icon: Box },
     ],
