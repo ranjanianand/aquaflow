@@ -64,6 +64,8 @@ import {
 } from '@/data/mock-twin';
 import { mockPlants } from '@/data/mock-plants';
 import type { CommandRiskLevel } from '@/data/mock-commands';
+import { FEATURES } from '@/lib/features';
+import { FeatureDisabled } from '@/components/shared/feature-disabled';
 
 type ViewMode = 'simulation' | 'playback' | 'training';
 
@@ -83,7 +85,7 @@ const outcomeIcons: Record<string, React.ComponentType<{ className?: string }>> 
   environmental: Leaf,
 };
 
-export default function VirtualTwinPage() {
+function VirtualTwinContent() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>('simulation');
@@ -844,4 +846,18 @@ export default function VirtualTwinPage() {
 
     </div>
   );
+}
+
+// Gated: see lib/features.ts
+export default function VirtualTwinPage() {
+  if (!FEATURES.virtualTwin) {
+    return (
+      <FeatureDisabled
+        title="Virtual twin is not available"
+        reason="A digital twin needs a live two-way connection to the plant. Readings arrive as periodic file exports, so the twin can only show last-known values — which the P&ID schematic already does. Its apply-scenario action also sends commands to equipment, and no control path exists."
+        requirement="A live connection to the plant, and a control path for applying scenarios."
+      />
+    );
+  }
+  return <VirtualTwinContent />;
 }

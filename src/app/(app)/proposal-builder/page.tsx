@@ -48,6 +48,8 @@ import {
   type ProposalTemplate,
 } from '@/data/mock-proposals';
 import { format, formatDistanceToNow } from 'date-fns';
+import { FEATURES } from '@/lib/features';
+import { FeatureDisabled } from '@/components/shared/feature-disabled';
 import {
   BarChart,
   Bar,
@@ -66,7 +68,7 @@ import {
 
 type TabType = 'overview' | 'all' | 'drafts' | 'pending' | 'templates';
 
-export default function ProposalBuilderPage() {
+function ProposalBuilderContent() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
@@ -957,4 +959,18 @@ export default function ProposalBuilderPage() {
       </Dialog>
     </div>
   );
+}
+
+// Gated: see lib/features.ts
+export default function ProposalBuilderPage() {
+  if (!FEATURES.businessSuite) {
+    return (
+      <FeatureDisabled
+        title="Proposals is not part of this scope"
+        reason="This screen belongs to the commercial side of the platform and is not part of the plant analytics scope. Nothing is broken — it has been set aside so the interface reflects what the current data can support."
+        requirement="A decision to bring the commercial modules into scope."
+      />
+    );
+  }
+  return <ProposalBuilderContent />;
 }

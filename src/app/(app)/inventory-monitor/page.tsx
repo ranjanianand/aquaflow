@@ -64,6 +64,8 @@ import {
   Area,
 } from 'recharts';
 import { cn } from '@/lib/utils';
+import { FEATURES } from '@/lib/features';
+import { FeatureDisabled } from '@/components/shared/feature-disabled';
 
 type TabValue = 'overview' | 'inventory' | 'alerts' | 'movements' | 'orders';
 
@@ -159,7 +161,7 @@ function ActionMenu({
   );
 }
 
-export default function InventoryMonitorPage() {
+function InventoryMonitorContent() {
   const [selectedTab, setSelectedTab] = useState<TabValue>('overview');
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
@@ -2118,4 +2120,18 @@ export default function InventoryMonitorPage() {
       </Dialog>
     </div>
   );
+}
+
+// Gated: see lib/features.ts
+export default function InventoryMonitorPage() {
+  if (!FEATURES.businessSuite) {
+    return (
+      <FeatureDisabled
+        title="Inventory is not part of this scope"
+        reason="This screen belongs to the commercial side of the platform and is not part of the plant analytics scope. Nothing is broken — it has been set aside so the interface reflects what the current data can support."
+        requirement="A decision to bring the commercial modules into scope."
+      />
+    );
+  }
+  return <InventoryMonitorContent />;
 }

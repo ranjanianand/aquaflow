@@ -35,16 +35,39 @@ export const FEATURES = {
   autonomousOptimization: false,
 
   /**
-   * Digital twin. Simulation and display are fine; "apply scenario" writes
-   * commands and is gated by writeBack separately.
+   * Digital twin. A twin needs live two-way state with the plant; with batch
+   * file ingestion it degrades to a schematic of last-known values, which is
+   * what the P&ID screen already provides. Its "apply scenario" action also
+   * writes commands.
    */
-  virtualTwin: true,
+  virtualTwin: false,
 
   /**
    * Predictive maintenance. Needs months of accumulated history before its
    * output means anything. Enable once there is real data behind it.
    */
   predictive: false,
+
+  /**
+   * Maintenance scheduling. Work orders, service visits and technician
+   * assignment come from a maintenance system, not from a sensor file. There
+   * is no source for this data in the current scope.
+   */
+  maintenanceScheduling: false,
+
+  /**
+   * Equipment health scoring. The files do carry equipment tags, but runtime
+   * hours and cycle counts have to be derived from state changes over time
+   * rather than received ready-made. Enable once that calculation exists.
+   */
+  assetHealth: false,
+
+  /**
+   * Commercial suite — customers, contracts, procurement, proposals,
+   * inventory. Unrelated to plant analytics and out of scope for this phase.
+   * Nothing here is broken; it simply belongs to a different product.
+   */
+  businessSuite: false,
 } as const;
 
 export type FeatureName = keyof typeof FEATURES;
@@ -59,6 +82,14 @@ export const ROUTE_FEATURES: Record<string, FeatureName> = {
   '/autonomous-optimization': 'autonomousOptimization',
   '/predictive': 'predictive',
   '/virtual-twin': 'virtualTwin',
+  '/service-monitor': 'maintenanceScheduling',
+  '/asset-monitor': 'assetHealth',
+  // Commercial suite
+  '/customers': 'businessSuite',
+  '/contracts': 'businessSuite',
+  '/smart-cart': 'businessSuite',
+  '/proposal-builder': 'businessSuite',
+  '/inventory-monitor': 'businessSuite',
 };
 
 export function isRouteEnabled(href: string): boolean {

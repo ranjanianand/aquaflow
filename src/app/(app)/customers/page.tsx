@@ -46,8 +46,10 @@ import {
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { FEATURES } from '@/lib/features';
+import { FeatureDisabled } from '@/components/shared/feature-disabled';
 
-export default function CustomersPage() {
+function CustomersContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -809,4 +811,18 @@ export default function CustomersPage() {
       </Dialog>
     </div>
   );
+}
+
+// Gated: see lib/features.ts
+export default function CustomersPage() {
+  if (!FEATURES.businessSuite) {
+    return (
+      <FeatureDisabled
+        title="Customers is not part of this scope"
+        reason="This screen belongs to the commercial side of the platform and is not part of the plant analytics scope. Nothing is broken — it has been set aside so the interface reflects what the current data can support."
+        requirement="A decision to bring the commercial modules into scope."
+      />
+    );
+  }
+  return <CustomersContent />;
 }

@@ -42,6 +42,8 @@ import {
   type SmartRecommendation,
 } from '@/data/mock-smart-cart';
 import { format } from 'date-fns';
+import { FEATURES } from '@/lib/features';
+import { FeatureDisabled } from '@/components/shared/feature-disabled';
 import {
   AreaChart,
   Area,
@@ -60,7 +62,7 @@ import {
 
 type TabType = 'overview' | 'cart' | 'recommendations' | 'history';
 
-export default function SmartCartPage() {
+function SmartCartContent() {
   const [selectedRecommendation, setSelectedRecommendation] = useState<SmartRecommendation | null>(null);
   const [showCheckout, setShowCheckout] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
@@ -787,4 +789,18 @@ export default function SmartCartPage() {
       </Dialog>
     </div>
   );
+}
+
+// Gated: see lib/features.ts
+export default function SmartCartPage() {
+  if (!FEATURES.businessSuite) {
+    return (
+      <FeatureDisabled
+        title="Procurement is not part of this scope"
+        reason="This screen belongs to the commercial side of the platform and is not part of the plant analytics scope. Nothing is broken — it has been set aside so the interface reflects what the current data can support."
+        requirement="A decision to bring the commercial modules into scope."
+      />
+    );
+  }
+  return <SmartCartContent />;
 }

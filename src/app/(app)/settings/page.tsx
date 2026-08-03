@@ -53,6 +53,7 @@ import {
 } from '@/data/mock-gateways';
 import { mockPlants } from '@/data/mock-plants';
 import { X, MoreVertical } from 'lucide-react';
+import { FEATURES } from '@/lib/features';
 
 type TabType = 'notifications' | 'profile' | 'security' | 'audit' | 'integration';
 
@@ -390,9 +391,14 @@ export default function SettingsPage() {
     });
   };
 
+  // The Integration tab configures edge gateways, PLC sessions and an MQTT
+  // broker. None of those exist when readings arrive as file exports, so the
+  // tab is withheld rather than offering settings for absent hardware.
   const tabs = [
     { id: 'notifications' as TabType, label: 'Notifications', icon: Bell },
-    { id: 'integration' as TabType, label: 'Integration', icon: Router },
+    ...(FEATURES.gatewayManagement
+      ? [{ id: 'integration' as TabType, label: 'Integration', icon: Router }]
+      : []),
     { id: 'profile' as TabType, label: 'Profile', icon: User },
     { id: 'security' as TabType, label: 'Security', icon: Shield },
     { id: 'audit' as TabType, label: 'Audit Log', icon: FileText },
