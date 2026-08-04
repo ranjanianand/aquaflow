@@ -20,6 +20,8 @@ import { ingest } from '@/lib/pipeline/ingest';
 import { generateFile, FAULT_LABEL, GeneratedFile } from '@/lib/pipeline/generate';
 import { IngestResult, TracedReading } from '@/lib/pipeline/types';
 import { cn } from '@/lib/utils';
+import { FEATURES } from '@/lib/features';
+import { FeatureDisabled } from '@/components/shared/feature-disabled';
 
 /** Seconds between arrivals. A real plant exports every few minutes. */
 const ARRIVAL_SECONDS = 9;
@@ -57,7 +59,7 @@ function processFile(seq: number, at: Date): Processed {
   };
 }
 
-export default function DataPipelinePage() {
+function DataPipelineContent() {
   const [files, setFiles] = useState<Processed[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
   const [live, setLive] = useState(true);
@@ -436,4 +438,18 @@ export default function DataPipelinePage() {
       </div>
     </div>
   );
+}
+
+// Gated: see lib/features.ts
+export default function DataPipelinePage() {
+  if (!FEATURES.dataPipeline) {
+    return (
+      <FeatureDisabled
+        title="The data pipeline view is not available"
+        reason="This screen reports on how each incoming file was processed rather than analysing the readings themselves."
+        requirement="A decision to surface ingestion detail alongside the analytics."
+      />
+    );
+  }
+  return <DataPipelineContent />;
 }

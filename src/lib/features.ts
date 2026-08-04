@@ -70,6 +70,16 @@ export const FEATURES = {
    * configures plant hardware rather than analysing the readings.
    */
   processSchematic: false,
+
+  /**
+   * Data pipeline screen.
+   *
+   * Shows what each incoming file contained and the decision recorded against
+   * every reading in it. Useful for tracing a figure back to its source, but it
+   * reports on ingestion rather than analysing the readings, so it sits outside
+   * the analytical scope.
+   */
+  dataPipeline: false,
 } as const;
 
 export type FeatureName = keyof typeof FEATURES;
@@ -84,6 +94,7 @@ export const ROUTE_FEATURES: Record<string, FeatureName> = {
   '/autonomous-optimization': 'autonomousOptimization',
   '/virtual-twin': 'virtualTwin',
   '/process-flow-schematic': 'processSchematic',
+  '/data-pipeline': 'dataPipeline',
   '/insights': 'operationalInsights',
   // Commercial suite
   '/customers': 'businessSuite',
