@@ -1,14 +1,16 @@
 /**
  * Feature flags.
  *
- * The platform ingests plant readings from JSON files dropped in object
- * storage. That path is one-way: we read what the plant exports, and there is
- * no channel back into the PLCs.
+ * The platform reads plant readings from JSON files and analyses them. One
+ * test decides whether a screen ships: does it analyse the readings?
  *
- * Anything that writes to the plant, or that describes edge hardware we no
- * longer operate, is therefore switched off rather than deleted — the code
- * stays for when a control path exists, but it must not ship enabled and
- * imply a capability the system does not have.
+ * Screens that operate the plant, that describe or configure its hardware, or
+ * that are commercial rather than analytical are switched off — not deleted.
+ * The code stays for when the scope changes.
+ *
+ * Screens that analyse accumulated history stay ON even where little history
+ * exists yet. How much data has arrived is a matter of time, not capability,
+ * and they become useful the moment the plants provide their existing records.
  */
 
 export const FEATURES = {
@@ -43,24 +45,11 @@ export const FEATURES = {
   virtualTwin: false,
 
   /**
-   * Predictive maintenance. Needs months of accumulated history before its
-   * output means anything. Enable once there is real data behind it.
-   */
-  predictive: false,
-
-  /**
    * Maintenance scheduling. Work orders, service visits and technician
    * assignment come from a maintenance system, not from a sensor file. There
    * is no source for this data in the current scope.
    */
   maintenanceScheduling: false,
-
-  /**
-   * Equipment health scoring. The files do carry equipment tags, but runtime
-   * hours and cycle counts have to be derived from state changes over time
-   * rather than received ready-made. Enable once that calculation exists.
-   */
-  assetHealth: false,
 
   /**
    * Commercial suite — customers, contracts, procurement, proposals,
@@ -92,14 +81,13 @@ export const FEATURES = {
   aiAssistant: false,
 
   /**
-   * Energy management.
+   * P&ID schematic.
    *
-   * Reports consumption, cost, specific energy and power factor. All of these
-   * need electrical measurement, and the plant exports carry pump current
-   * only — no voltage, no power. Enable once the plants confirm they can
-   * export power data.
+   * A process engineering drawing of the plant — equipment, valves, pipework
+   * and their states, with controls to add equipment. It represents and
+   * configures plant hardware rather than analysing the readings.
    */
-  energyMonitoring: false,
+  processSchematic: false,
 } as const;
 
 export type FeatureName = keyof typeof FEATURES;
@@ -112,13 +100,11 @@ export function isEnabled(feature: FeatureName): boolean {
 export const ROUTE_FEATURES: Record<string, FeatureName> = {
   '/command-execution': 'writeBack',
   '/autonomous-optimization': 'autonomousOptimization',
-  '/predictive': 'predictive',
   '/virtual-twin': 'virtualTwin',
   '/service-monitor': 'maintenanceScheduling',
-  '/asset-monitor': 'assetHealth',
+  '/process-flow-schematic': 'processSchematic',
   '/insights': 'operationalInsights',
   '/ai-support': 'aiAssistant',
-  '/energy': 'energyMonitoring',
   // Commercial suite
   '/customers': 'businessSuite',
   '/contracts': 'businessSuite',

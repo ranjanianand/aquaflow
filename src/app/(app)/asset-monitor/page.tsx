@@ -42,8 +42,6 @@ import {
 } from '@/data/mock-asset-monitor';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
-import { FEATURES } from '@/lib/features';
-import { FeatureDisabled } from '@/components/shared/feature-disabled';
 import {
   AreaChart,
   Area,
@@ -134,7 +132,7 @@ function ActionMenu({
 
 type TabValue = 'overview' | 'all' | 'critical' | 'maintenance';
 
-function AssetMonitorContent() {
+export default function AssetMonitorPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
@@ -1306,18 +1304,4 @@ function AssetMonitorContent() {
       </Dialog>
     </div>
   );
-}
-
-// Gated: see lib/features.ts
-export default function AssetMonitorPage() {
-  if (!FEATURES.assetHealth) {
-    return (
-      <FeatureDisabled
-        title="Equipment health is not available yet"
-        reason="The plant files do carry equipment signals such as pump run state, speed and current. Health scores additionally need runtime hours and cycle counts, which must be calculated from those signals over time rather than received directly."
-        requirement="The runtime and cycle calculation, plus a period of accumulated equipment history."
-      />
-    );
-  }
-  return <AssetMonitorContent />;
 }

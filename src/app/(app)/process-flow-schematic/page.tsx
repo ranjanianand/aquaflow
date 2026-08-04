@@ -66,6 +66,8 @@ import { mockPlants } from '@/data/mock-plants';
 import { Node } from '@xyflow/react';
 import Link from 'next/link';
 import { Slider } from '@/components/ui/slider';
+import { FEATURES } from '@/lib/features';
+import { FeatureDisabled } from '@/components/shared/feature-disabled';
 
 // Valve icon SVG component
 const ValveIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -114,7 +116,7 @@ const generateTimeLabels = () => {
 
 const timeLabels = generateTimeLabels();
 
-export default function ProcessFlowSchematicPage() {
+function ProcessFlowSchematicContent() {
   const [selectedPlant, setSelectedPlant] = useState('plant-1');
   const [selectedEquipment, setSelectedEquipment] = useState<Node<SchematicNodeData> | null>(null);
 
@@ -885,4 +887,18 @@ export default function ProcessFlowSchematicPage() {
       </Dialog>
     </div>
   );
+}
+
+// Gated: see lib/features.ts
+export default function ProcessFlowSchematicPage() {
+  if (!FEATURES.processSchematic) {
+    return (
+      <FeatureDisabled
+        title="The process schematic is not available"
+        reason="This is a process engineering drawing of the plant — its equipment, valves and pipework. The platform analyses the readings a plant reports rather than representing the plant itself, so the schematic sits outside its scope."
+        requirement="A decision to extend the platform into plant engineering documentation."
+      />
+    );
+  }
+  return <ProcessFlowSchematicContent />;
 }
