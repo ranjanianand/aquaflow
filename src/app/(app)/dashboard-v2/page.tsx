@@ -2,6 +2,8 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { FEATURES } from '@/lib/features';
+import { FeatureDisabled } from '@/components/shared/feature-disabled';
 import {
   AlarmSummaryBar,
   IndustrialKPIBar,
@@ -112,7 +114,16 @@ function DashboardContent() {
     case 'manager':
       return <ManagerDashboard />;
     case 'executive':
-      return <ExecutiveDashboard />;
+      // Commercial reporting rather than plant analysis — see lib/features.ts
+      return FEATURES.executiveView ? (
+        <ExecutiveDashboard />
+      ) : (
+        <FeatureDisabled
+          title="The executive view is not available"
+          reason="This view reports contract value, revenue, outstanding balances and customer health. Those are commercial figures rather than an analysis of the plant readings."
+          requirement="A decision to bring commercial reporting into scope."
+        />
+      );
     default:
       return <OperatorDashboard />;
   }

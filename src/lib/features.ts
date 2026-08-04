@@ -80,6 +80,16 @@ export const FEATURES = {
    * the analytical scope.
    */
   dataPipeline: false,
+
+  /**
+   * Executive view.
+   *
+   * Reports contract value, lifetime revenue, outstanding balances, customer
+   * health and contract renewals. Those are commercial figures rather than an
+   * analysis of the plant readings, which places the view with the rest of the
+   * commercial suite.
+   */
+  executiveView: false,
 } as const;
 
 export type FeatureName = keyof typeof FEATURES;
@@ -95,6 +105,8 @@ export const ROUTE_FEATURES: Record<string, FeatureName> = {
   '/virtual-twin': 'virtualTwin',
   '/process-flow-schematic': 'processSchematic',
   '/data-pipeline': 'dataPipeline',
+  // Role views share a route, so this key carries its query string
+  '/dashboard-v2?role=executive': 'executiveView',
   '/insights': 'operationalInsights',
   // Commercial suite
   '/customers': 'businessSuite',
@@ -105,7 +117,7 @@ export const ROUTE_FEATURES: Record<string, FeatureName> = {
 };
 
 export function isRouteEnabled(href: string): boolean {
-  const path = href.split('?')[0];
-  const feature = ROUTE_FEATURES[path];
+  // Match the full href first: the dashboard role views differ only by query.
+  const feature = ROUTE_FEATURES[href] ?? ROUTE_FEATURES[href.split('?')[0]];
   return feature ? FEATURES[feature] : true;
 }
