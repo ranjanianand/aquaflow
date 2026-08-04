@@ -68,6 +68,38 @@ export const FEATURES = {
    * Nothing here is broken; it simply belongs to a different product.
    */
   businessSuite: false,
+
+  /**
+   * Operational Insights.
+   *
+   * Reads as an analytics screen, but every recommendation carries an
+   * "Apply recommendation" action that writes a setpoint to equipment — feed
+   * pressure, chlorine dosing rate, backwash timing. That is the capability
+   * gated by writeBack, so it cannot ship while the control path is absent.
+   * It could return advisory-only, with the apply action removed.
+   */
+  operationalInsights: false,
+
+  /**
+   * AI assistant.
+   *
+   * The conversation is connected to neither plant data nor a model, and the
+   * panel beside it reports an indexed knowledge base — millions of sensor
+   * records, thousands of maintenance documents — that has not been built.
+   * Stating a data estate we do not hold is the most misleading claim in the
+   * interface.
+   */
+  aiAssistant: false,
+
+  /**
+   * Energy management.
+   *
+   * Reports consumption, cost, specific energy and power factor. All of these
+   * need electrical measurement, and the plant exports carry pump current
+   * only — no voltage, no power. Enable once the plants confirm they can
+   * export power data.
+   */
+  energyMonitoring: false,
 } as const;
 
 export type FeatureName = keyof typeof FEATURES;
@@ -84,6 +116,9 @@ export const ROUTE_FEATURES: Record<string, FeatureName> = {
   '/virtual-twin': 'virtualTwin',
   '/service-monitor': 'maintenanceScheduling',
   '/asset-monitor': 'assetHealth',
+  '/insights': 'operationalInsights',
+  '/ai-support': 'aiAssistant',
+  '/energy': 'energyMonitoring',
   // Commercial suite
   '/customers': 'businessSuite',
   '/contracts': 'businessSuite',

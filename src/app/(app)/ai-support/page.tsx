@@ -26,6 +26,8 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
+import { FEATURES } from '@/lib/features';
+import { FeatureDisabled } from '@/components/shared/feature-disabled';
 
 interface ChatMessage {
   id: string;
@@ -180,7 +182,7 @@ const getAIResponse = (userMessage: string): string => {
   return mockResponses['default'];
 };
 
-export default function AISupportPage() {
+function AISupportContent() {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'welcome',
@@ -599,4 +601,18 @@ How can I assist you today?`,
       </div>
     </div>
   );
+}
+
+// Gated: see lib/features.ts
+export default function AISupportPage() {
+  if (!FEATURES.aiAssistant) {
+    return (
+      <FeatureDisabled
+        title="The assistant is not available"
+        reason="The conversation is not yet connected to plant data, and the panel beside it reports an indexed knowledge base of sensor records, maintenance logs and equipment manuals that has not been built. Presenting those figures would overstate what the platform holds."
+        requirement="A retained store of readings for the assistant to draw on, and a connection to the model that answers."
+      />
+    );
+  }
+  return <AISupportContent />;
 }

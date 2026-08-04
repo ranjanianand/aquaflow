@@ -54,6 +54,7 @@ import {
   getAverageHealthScore,
 } from '@/data/mock-customers';
 import { getSLAComplianceRate } from '@/data/mock-services';
+import { FEATURES } from '@/lib/features';
 
 export function ExecutiveDashboard() {
   // Financial Metrics
@@ -520,7 +521,11 @@ export function ExecutiveDashboard() {
           </div>
         </section>
 
-        {/* Bottom Section - Contract & Customer Overview */}
+        {/* Bottom Section - Contract & Customer Overview.
+            Contract and customer records are commercial data with no source in
+            the plant exports, so the section is withheld with the rest of the
+            commercial suite. */}
+        {FEATURES.businessSuite && (
         <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* Active Contracts */}
           <div className="bg-white border-2 border-slate-300 overflow-hidden">
@@ -633,6 +638,7 @@ export function ExecutiveDashboard() {
             </div>
           </div>
         </section>
+        )}
       </main>
 
       {/* Footer */}

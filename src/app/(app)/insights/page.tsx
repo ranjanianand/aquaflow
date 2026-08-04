@@ -27,11 +27,13 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { InsightsSkeleton } from '@/components/shared/loading-skeleton';
+import { FEATURES } from '@/lib/features';
+import { FeatureDisabled } from '@/components/shared/feature-disabled';
 
 type InsightType = OperationalInsight['type'] | 'all';
 type InsightPriority = OperationalInsight['priority'] | 'all';
 
-export default function InsightsPage() {
+function InsightsContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedType, setSelectedType] = useState<InsightType>('all');
   const [selectedPriority, setSelectedPriority] = useState<InsightPriority>('all');
@@ -398,4 +400,18 @@ export default function InsightsPage() {
       </div>
     </div>
   );
+}
+
+// Gated: see lib/features.ts
+export default function InsightsPage() {
+  if (!FEATURES.operationalInsights) {
+    return (
+      <FeatureDisabled
+        title="Operational insights are not available"
+        reason="Each recommendation on this screen carries an action that writes a setpoint to plant equipment — feed pressure, chlorine dosing rate, backwash timing. Readings reach the platform as file exports, which is a one-way path, so an applied change would never arrive at the equipment."
+        requirement="A control path to the plant. Alternatively the screen can return as advisory-only, presenting the recommendation for an operator to apply by hand."
+      />
+    );
+  }
+  return <InsightsContent />;
 }

@@ -55,10 +55,12 @@ import {
   PolarRadiusAxis,
 } from 'recharts';
 import { format } from 'date-fns';
+import { FEATURES } from '@/lib/features';
+import { FeatureDisabled } from '@/components/shared/feature-disabled';
 
 const COLORS = ['#0066ff', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 
-export default function EnergyPage() {
+function EnergyContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedPlant, setSelectedPlant] = useState<string>('all');
   const [timeRange, setTimeRange] = useState<string>('24h');
@@ -912,4 +914,18 @@ export default function EnergyPage() {
       </div>
     </div>
   );
+}
+
+// Gated: see lib/features.ts
+export default function EnergyPage() {
+  if (!FEATURES.energyMonitoring) {
+    return (
+      <FeatureDisabled
+        title="Energy management is not available yet"
+        reason="Consumption, cost, specific energy and power factor all require electrical measurement. The plant exports currently carry pump current only — without voltage or power readings these figures cannot be derived from the data received."
+        requirement="Confirmation that the plants can export power measurements, and inclusion of those tags in the data files."
+      />
+    );
+  }
+  return <EnergyContent />;
 }
