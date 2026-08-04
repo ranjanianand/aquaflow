@@ -68,8 +68,6 @@ import {
   Line,
 } from 'recharts';
 import { toast } from 'sonner';
-import { FEATURES } from '@/lib/features';
-import { FeatureDisabled } from '@/components/shared/feature-disabled';
 
 // Industrial-styled action menu component
 function ActionMenu({
@@ -143,7 +141,7 @@ function ActionMenu({
 
 type TabValue = 'overview' | 'tickets' | 'technicians' | 'schedule';
 
-function ServiceMonitorContent() {
+export default function ServiceMonitorPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
@@ -1377,18 +1375,4 @@ function ServiceMonitorContent() {
       </Dialog>
     </div>
   );
-}
-
-// Gated: see lib/features.ts
-export default function ServiceMonitorPage() {
-  if (!FEATURES.maintenanceScheduling) {
-    return (
-      <FeatureDisabled
-        title="Maintenance scheduling is not available"
-        reason="Work orders, service visits and technician assignments come from a maintenance system. The plant data files contain sensor and equipment readings only, so there is no source for this information."
-        requirement="A connection to the maintenance system, or manual entry of work orders."
-      />
-    );
-  }
-  return <ServiceMonitorContent />;
 }

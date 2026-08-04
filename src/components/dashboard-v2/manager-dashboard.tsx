@@ -24,7 +24,6 @@ import {
 import { cn } from '@/lib/utils';
 import { mockPlants } from '@/data/mock-plants';
 import { getActiveAlerts, getCriticalAlertsCount } from '@/data/mock-alerts';
-import { FEATURES } from '@/lib/features';
 import {
   mockEquipmentHealth,
   getOverallHealthScore,
@@ -418,10 +417,7 @@ export function ManagerDashboard() {
             </div>
           </div>
 
-          {/* Team Status.
-              Technician records originate in a maintenance system, not in the
-              plant exports, so this panel is withheld with the Maintenance screen. */}
-          {FEATURES.maintenanceScheduling && (
+          {/* Team Status */}
           <div className="bg-white border-2 border-slate-300 overflow-hidden">
             <div className="bg-slate-100 px-4 py-2 border-b-2 border-slate-300 flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -463,10 +459,8 @@ export function ManagerDashboard() {
               ))}
             </div>
           </div>
-          )}
 
-          {/* Service Tickets Summary — same source, same constraint. */}
-          {FEATURES.maintenanceScheduling && (
+          {/* Service Tickets Summary */}
           <div className="bg-white border-2 border-slate-300 overflow-hidden">
             <div className="bg-slate-100 px-4 py-2 border-b-2 border-slate-300 flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -522,7 +516,6 @@ export function ManagerDashboard() {
               </div>
             </div>
           </div>
-          )}
         </section>
       </main>
 

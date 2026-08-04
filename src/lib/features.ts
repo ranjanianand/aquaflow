@@ -45,13 +45,6 @@ export const FEATURES = {
   virtualTwin: false,
 
   /**
-   * Maintenance scheduling. Work orders, service visits and technician
-   * assignment come from a maintenance system, not from a sensor file. There
-   * is no source for this data in the current scope.
-   */
-  maintenanceScheduling: false,
-
-  /**
    * Commercial suite — customers, contracts, procurement, proposals,
    * inventory. Unrelated to plant analytics and out of scope for this phase.
    * Nothing here is broken; it simply belongs to a different product.
@@ -90,7 +83,6 @@ export const ROUTE_FEATURES: Record<string, FeatureName> = {
   '/command-execution': 'writeBack',
   '/autonomous-optimization': 'autonomousOptimization',
   '/virtual-twin': 'virtualTwin',
-  '/service-monitor': 'maintenanceScheduling',
   '/process-flow-schematic': 'processSchematic',
   '/insights': 'operationalInsights',
   // Commercial suite
