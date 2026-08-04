@@ -70,17 +70,6 @@ export const FEATURES = {
   operationalInsights: false,
 
   /**
-   * AI assistant.
-   *
-   * The conversation is connected to neither plant data nor a model, and the
-   * panel beside it reports an indexed knowledge base — millions of sensor
-   * records, thousands of maintenance documents — that has not been built.
-   * Stating a data estate we do not hold is the most misleading claim in the
-   * interface.
-   */
-  aiAssistant: false,
-
-  /**
    * P&ID schematic.
    *
    * A process engineering drawing of the plant — equipment, valves, pipework
@@ -104,7 +93,6 @@ export const ROUTE_FEATURES: Record<string, FeatureName> = {
   '/service-monitor': 'maintenanceScheduling',
   '/process-flow-schematic': 'processSchematic',
   '/insights': 'operationalInsights',
-  '/ai-support': 'aiAssistant',
   // Commercial suite
   '/customers': 'businessSuite',
   '/contracts': 'businessSuite',

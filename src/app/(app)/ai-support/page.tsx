@@ -26,8 +26,6 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
-import { FEATURES } from '@/lib/features';
-import { FeatureDisabled } from '@/components/shared/feature-disabled';
 
 interface ChatMessage {
   id: string;
@@ -182,7 +180,7 @@ const getAIResponse = (userMessage: string): string => {
   return mockResponses['default'];
 };
 
-function AISupportContent() {
+export default function AISupportPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'welcome',
@@ -477,18 +475,15 @@ How can I assist you today?`,
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="relative flex h-1.5 w-1.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
-                </span>
-                <span className="text-[9px] text-emerald-600 font-medium">SYNCED</span>
+                <span className="inline-flex rounded-full h-1.5 w-1.5 bg-slate-400"></span>
+                <span className="text-[9px] text-slate-500 font-medium">NOT CONNECTED</span>
               </div>
             </div>
             <div className="p-3 space-y-3">
               {/* Indexed Data Sources */}
               <div>
                 <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-2">
-                  Indexed Sources
+                  Sources To Be Indexed
                 </div>
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between py-1.5 px-2 bg-slate-50 border border-slate-200">
@@ -496,28 +491,28 @@ How can I assist you today?`,
                       <HardDrive className="h-3 w-3 text-blue-500" />
                       <span className="text-[11px] text-slate-700">Sensor Data</span>
                     </div>
-                    <span className="text-[9px] font-mono text-slate-500">2.4M records</span>
+                    <span className="text-[9px] font-mono text-slate-400">not indexed</span>
                   </div>
                   <div className="flex items-center justify-between py-1.5 px-2 bg-slate-50 border border-slate-200">
                     <div className="flex items-center gap-2">
                       <FileText className="h-3 w-3 text-amber-500" />
                       <span className="text-[11px] text-slate-700">Maintenance Logs</span>
                     </div>
-                    <span className="text-[9px] font-mono text-slate-500">12.8K docs</span>
+                    <span className="text-[9px] font-mono text-slate-400">not indexed</span>
                   </div>
                   <div className="flex items-center justify-between py-1.5 px-2 bg-slate-50 border border-slate-200">
                     <div className="flex items-center gap-2">
                       <BookOpen className="h-3 w-3 text-purple-500" />
                       <span className="text-[11px] text-slate-700">Equipment Manuals</span>
                     </div>
-                    <span className="text-[9px] font-mono text-slate-500">847 pages</span>
+                    <span className="text-[9px] font-mono text-slate-400">not indexed</span>
                   </div>
                   <div className="flex items-center justify-between py-1.5 px-2 bg-slate-50 border border-slate-200">
                     <div className="flex items-center gap-2">
                       <AlertTriangle className="h-3 w-3 text-red-500" />
                       <span className="text-[11px] text-slate-700">Alert History</span>
                     </div>
-                    <span className="text-[9px] font-mono text-slate-500">45.2K events</span>
+                    <span className="text-[9px] font-mono text-slate-400">not indexed</span>
                   </div>
                 </div>
               </div>
@@ -530,7 +525,7 @@ How can I assist you today?`,
                 <div className="grid grid-cols-2 gap-2">
                   <div className="p-2 bg-blue-50 border border-blue-200">
                     <div className="text-[9px] text-blue-600 uppercase">Embeddings</div>
-                    <div className="text-[14px] font-bold font-mono text-blue-700">3.2M</div>
+                    <div className="text-[14px] font-bold font-mono text-slate-400">—</div>
                   </div>
                   <div className="p-2 bg-emerald-50 border border-emerald-200">
                     <div className="text-[9px] text-emerald-600 uppercase">Accuracy</div>
@@ -601,18 +596,4 @@ How can I assist you today?`,
       </div>
     </div>
   );
-}
-
-// Gated: see lib/features.ts
-export default function AISupportPage() {
-  if (!FEATURES.aiAssistant) {
-    return (
-      <FeatureDisabled
-        title="The assistant is not available"
-        reason="The conversation is not yet connected to plant data, and the panel beside it reports an indexed knowledge base of sensor records, maintenance logs and equipment manuals that has not been built. Presenting those figures would overstate what the platform holds."
-        requirement="A retained store of readings for the assistant to draw on, and a connection to the model that answers."
-      />
-    );
-  }
-  return <AISupportContent />;
 }
