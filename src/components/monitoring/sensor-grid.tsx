@@ -22,15 +22,6 @@ export function SensorGrid({ plant, sensors, onRefresh }: SensorGridProps) {
   const [selectedSensor, setSelectedSensor] = useState<Sensor | null>(null);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
 
-  if (!plant) {
-    return (
-      <div className="h-full flex flex-col items-center justify-center border-2 border-slate-300 bg-white text-slate-400">
-        <Activity className="h-12 w-12 mb-4 opacity-40" />
-        <p className="text-sm">Select a plant to view sensors</p>
-      </div>
-    );
-  }
-
   // Calculate stats
   const normalCount = sensors.filter(s => s.status === 'normal').length;
   const warningCount = sensors.filter(s => s.status === 'warning').length;
@@ -83,6 +74,20 @@ export function SensorGrid({ plant, sensors, onRefresh }: SensorGridProps) {
     setSearchQuery('');
   };
 
+  // Placed after the hooks, not before them. React requires the same hooks in
+  // the same order on every render, so an early return above `useMemo` changes
+  // the hook count the moment `plant` goes from null to loaded — which is
+  // exactly what happens on the first frame when data comes from an API rather
+  // than a synchronous mock array.
+  if (!plant) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center border-2 border-slate-300 bg-white text-slate-400">
+        <Activity className="h-12 w-12 mb-4 opacity-40" />
+        <p className="text-sm">Select a plant to view sensors</p>
+      </div>
+    );
+  }
+
   return (
     <div className={cn(
       'space-y-4',
@@ -93,18 +98,35 @@ export function SensorGrid({ plant, sensors, onRefresh }: SensorGridProps) {
         <div className="bg-slate-100 px-4 py-2.5 border-b-2 border-slate-300 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <span className="text-sm font-bold text-slate-700">{plant.name}</span>
+            {/* Was a hardcoded green "LIVE" pill that never changed. It sat
+                directly above cards reading OFFLINE, and next to a plant list
+                saying the same — three indicators, one of them lying. */}
             <div className="flex items-center gap-1.5">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex h-2 w-2 bg-emerald-500"></span>
-              </span>
-              <span className="text-[10px] font-mono text-emerald-600">LIVE</span>
+              {plant.status === 'online' ? (
+                <>
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex h-2 w-2 bg-emerald-500"></span>
+                  </span>
+                  <span className="text-[10px] font-mono text-emerald-600">LIVE</span>
+                </>
+              ) : (
+                <>
+                  <span className="inline-flex h-2 w-2 bg-slate-400" />
+                  <span className="text-[10px] font-mono text-slate-500">
+                    {plant.status === 'warning' ? 'DEGRADED' : 'NO RECENT DATA'}
+                  </span>
+                </>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
               <Clock className="h-3 w-3" />
-              <span className="font-mono">3s refresh</span>
+              {/* The prototype polled an in-memory array every 2 seconds.
+                  Against hourly plant data that is 1,800 requests per new
+                  reading, none of which can show anything different. */}
+              <span className="font-mono">60s refresh</span>
             </div>
             <button
               onClick={handleToggleFullScreen}

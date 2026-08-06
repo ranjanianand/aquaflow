@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { AlertTriangle, X, ChevronRight, Bell, Volume2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { getActiveAlerts } from '@/data/mock-alerts';
+import { useAlerts } from '@/lib/api/hooks';
 import Link from 'next/link';
 
 interface CriticalAlert {
@@ -27,8 +27,19 @@ export function CriticalAlertsBanner() {
     setMounted(true);
   }, []);
 
-  // Get critical and warning alerts
-  const activeAlerts = getActiveAlerts();
+  // Live alerts. Previously read from mock-alerts, which meant the banner
+  // announced faults the database had never seen — while the grid below it
+  // showed the real ones. A screen that mixes fabricated and real alarms is
+  // worse than one showing neither, because nothing marks which is which.
+  const { data: liveAlerts } = useAlerts();
+  const activeAlerts = (liveAlerts ?? []).map((a) => ({
+    id: a.id,
+    plantName: a.plantName,
+    sensorName: a.sensorName,
+    message: a.message,
+    severity: a.severity,
+    createdAt: a.timestamp,
+  }));
   const criticalAlerts: CriticalAlert[] = activeAlerts
     .filter((a): a is typeof a & { severity: 'critical' | 'warning' } =>
       a.severity === 'critical' || a.severity === 'warning'
@@ -193,7 +204,8 @@ export function CriticalAlertsBanner() {
 
 // Compact version for sidebar or smaller spaces
 export function CriticalAlertsCompact() {
-  const activeAlerts = getActiveAlerts();
+  const { data } = useAlerts();
+  const activeAlerts = data ?? [];
   const criticalCount = activeAlerts.filter((a) => a.severity === 'critical').length;
   const warningCount = activeAlerts.filter((a) => a.severity === 'warning').length;
 

@@ -45,7 +45,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useAuth } from '@/contexts/auth-context';
-import { getActiveAlertsCount } from '@/data/mock-alerts';
+import { useAlerts } from '@/lib/api/hooks';
 import { isRouteEnabled } from '@/lib/features';
 
 interface NavItem {
@@ -60,14 +60,14 @@ interface NavSection {
   items: NavItem[];
 }
 
-const allNavigation: NavSection[] = [
+const buildNavigation = (alarmCount?: number): NavSection[] => [
   {
     title: 'Overview',
     items: [
       { title: 'Operator View', href: '/dashboard-v2', icon: HardHat },
       { title: 'Manager View', href: '/dashboard-v2?role=manager', icon: BarChart3 },
       { title: 'Executive View', href: '/dashboard-v2?role=executive', icon: PieChart },
-      { title: 'Alarms', href: '/alerts', icon: Bell, badge: getActiveAlertsCount() },
+      { title: 'Alarms', href: '/alerts', icon: Bell, badge: alarmCount },
     ],
   },
   {
@@ -124,12 +124,13 @@ const allNavigation: NavSection[] = [
  * Hide anything whose feature is switched off, and drop sections left empty
  * as a result — a heading with nothing under it reads as a loading bug.
  */
-const navigation: NavSection[] = allNavigation
-  .map((section) => ({
-    ...section,
-    items: section.items.filter((item) => isRouteEnabled(item.href)),
-  }))
-  .filter((section) => section.items.length > 0);
+const visibleNavigation = (alarmCount?: number): NavSection[] =>
+  buildNavigation(alarmCount)
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => isRouteEnabled(item.href)),
+    }))
+    .filter((section) => section.items.length > 0);
 
 interface SidebarProps {
   collapsed: boolean;
@@ -137,6 +138,11 @@ interface SidebarProps {
 }
 
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
+  // Live count. Was a mock constant that read 38 regardless of what the
+  // database held — sitting next to an alerts screen showing 2.
+  const { data: alerts } = useAlerts();
+  const navigation = visibleNavigation(alerts?.length);
+
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { user, logout } = useAuth();
