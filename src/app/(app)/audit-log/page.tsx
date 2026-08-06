@@ -22,6 +22,7 @@ import {
   ArrowDownRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { usePlants } from '@/lib/api/hooks';
 import { format, formatDistanceToNow } from 'date-fns';
 import {
   getAuditLog,
@@ -29,7 +30,6 @@ import {
   type AuditLogEntry,
   type CommandRiskLevel,
 } from '@/data/mock-commands';
-import { mockPlants } from '@/data/mock-plants';
 
 type ActionFilter = 'all' | 'executed' | 'failed' | 'cancelled' | 'confirmed' | 'created';
 type RiskFilter = 'all' | 'low' | 'medium' | 'high' | 'critical';
@@ -66,6 +66,11 @@ const sourceLabels: Record<string, string> = {
 };
 
 export default function AuditLogPage() {
+  // Plant list from the database. Was a fixture array whose ids,
+  // names and online/offline status were fixed at build time.
+  const { data: livePlants } = usePlants();
+  const mockPlants = livePlants ?? [];
+
   const [isLoading, setIsLoading] = useState(true);
   const [actionFilter, setActionFilter] = useState<ActionFilter>('all');
   const [riskFilter, setRiskFilter] = useState<RiskFilter>('all');

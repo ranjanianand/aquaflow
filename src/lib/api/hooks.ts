@@ -9,11 +9,13 @@
  * says "cannot reach the API" over the last known values — the operator needs
  * to know which of the two they are looking at.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Plant } from '@/types';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { Alert, Plant } from '@/types';
 import {
-  fetchAlerts, fetchHistory, fetchKpis, fetchPlants, fetchSensors,
-  type Kpis, type LiveAlert, type LiveSensor, type TrendPoint,
+  fetchAlertTrend, fetchAlerts, fetchAlertsHourly, fetchAllSensors, fetchHistory, fetchKpis,
+  fetchPlants, fetchSensors,
+  type AlertHour, type AlertTrendDay, type Kpis, type LiveAlert, type LiveSensor,
+  type TrendPoint,
 } from './client';
 
 interface State<T> {
@@ -100,4 +102,55 @@ export function useAlerts(pollMs = 60_000) {
 
 export function useKpis(pollMs = 60_000) {
   return useResource<Kpis>((s) => fetchKpis(s), [], pollMs);
+}
+
+
+/**
+ * Live alerts mapped into the app's `Alert` shape.
+ *
+ * Two fields have no source and are stated as such rather than invented:
+ *   - `status` is always 'active'. Acknowledgement is a write, and there is
+ *     no write path back to the plant, so nothing can move an alert out of
+ *     'active' yet.
+ *   - `duration` is unknown. Alarms are derived from the current reading, not
+ *     from stored open/close events, so how long a breach has run is not
+ *     recorded. The alerts table exists for this; nothing writes to it yet.
+ */
+export function useAlertsAsAppAlerts(pollMs = 60_000) {
+  const { data, error, loading, refresh } = useAlerts(pollMs);
+  const alerts = useMemo<Alert[]>(
+    () => (data ?? []).map((a) => ({
+      id: a.id,
+      plantId: a.plantId,
+      plantName: a.plantName,
+      sensorId: a.sensorId,
+      sensorName: a.sensorName,
+      type: a.stage,
+      severity: a.severity,
+      message: a.message,
+      value: a.value ?? 0,
+      threshold: a.limit ?? 0,
+      unit: a.unit,
+      status: 'active',
+      createdAt: a.timestamp,
+    })),
+    [data],
+  );
+  return { data: alerts, error, loading, refresh };
+}
+
+/** Breaches per day, counted from the hourly rollup. Replaces a chart built
+ *  from Math.random() — which redrew differently on every render. */
+export function useAlertTrend(days = 7) {
+  return useResource<AlertTrendDay[]>((s) => fetchAlertTrend(days, s), [days]);
+}
+
+/** Every sensor across every plant. Fleet views only — no history is fetched. */
+export function useAllSensors(pollMs = 60_000) {
+  return useResource<LiveSensor[]>((s) => fetchAllSensors(s), [], pollMs);
+}
+
+/** Breaches per hour over the most recent 24h of data. */
+export function useAlertsHourly(hours = 24) {
+  return useResource<AlertHour[]>((s) => fetchAlertsHourly(hours, s), [hours]);
 }

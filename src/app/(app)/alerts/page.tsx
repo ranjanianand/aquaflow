@@ -5,12 +5,7 @@ import { AlertTable } from '@/components/alerts/alert-table';
 import { AlertModal } from '@/components/alerts/alert-modal';
 import { CreateRuleModal } from '@/components/alerts/create-rule-modal';
 import { Alert, AlertStatus, AlertRule } from '@/types';
-import {
-  mockAlerts,
-  getAlertsByStatus,
-  getAlertStats,
-} from '@/data/mock-alerts';
-import { mockPlants } from '@/data/mock-plants';
+import { usePlants, useAlertsAsAppAlerts, useAlertTrend } from '@/lib/api/hooks';
 import {
   getCorrelatedAlertGroups,
   getFatigueMetrics,
@@ -96,7 +91,27 @@ export default function AlertsPage() {
     return () => clearTimeout(timer);
   }, []);
 
-  const stats = getAlertStats();
+  const { data: plants } = usePlants();
+  const { data: liveAlerts } = useAlertsAsAppAlerts();
+  const { data: trendDays } = useAlertTrend(7);
+  const mockAlerts = liveAlerts;
+
+  // Derived from the live set rather than a fixture helper.
+  //
+  // acknowledged and resolved are always 0: both are writes, and there is no
+  // write path back to the plant. Showing a non-zero count for either would
+  // claim someone had actioned an alarm when nothing can record that yet.
+  const stats = {
+    total: mockAlerts.length,
+    active: mockAlerts.length,
+    critical: mockAlerts.filter((a) => a.severity === 'critical').length,
+    warning: mockAlerts.filter((a) => a.severity === 'warning').length,
+    info: 0,
+    acknowledged: 0,
+    resolved: 0,
+  };
+  const getAlertsByStatus = (status: AlertStatus) =>
+    mockAlerts.filter((a) => a.status === status);
 
   // Chart color constants
   const COLORS = {
@@ -134,20 +149,19 @@ export default function AlertsPage() {
     return Object.values(plantCounts);
   }, []);
 
-  // Alert trend data (last 7 days)
-  const alertTrend = useMemo(() => {
-    const days: { date: string; alerts: number; critical: number; resolved: number }[] = [];
-    for (let i = 6; i >= 0; i--) {
-      const date = subDays(new Date(), i);
-      const dateStr = format(date, 'MMM dd');
-      // Simulated data based on pattern
-      const baseAlerts = Math.floor(Math.random() * 8) + 4;
-      const critical = Math.floor(Math.random() * 3);
-      const resolved = Math.floor(Math.random() * 6) + 2;
-      days.push({ date: dateStr, alerts: baseAlerts, critical, resolved });
-    }
-    return days;
-  }, []);
+  // Real breach counts per day, from the hourly rollup. This was
+  // Math.random() — a chart that drew a different history on every render.
+  // `resolved` stays 0: nothing closes an alarm, because closing one is a
+  // write and there is no write path.
+  const alertTrend = useMemo(
+    () => (trendDays ?? []).map((d) => ({
+      date: format(new Date(d.date), 'MMM dd'),
+      alerts: d.alerts,
+      critical: d.critical,
+      resolved: 0,
+    })),
+    [trendDays],
+  );
 
   // Alert types distribution
   const alertTypes = useMemo(() => {
@@ -407,7 +421,7 @@ export default function AlertsPage() {
                   className="h-8 px-3 pr-8 text-[11px] font-bold uppercase border-2 border-slate-300 bg-white appearance-none cursor-pointer focus:outline-none focus:border-slate-500"
                 >
                   <option value="all">All Plants</option>
-                  {mockPlants.map((plant) => (
+                  {(plants ?? []).map((plant) => (
                     <option key={plant.id} value={plant.id}>
                       {plant.name}
                     </option>

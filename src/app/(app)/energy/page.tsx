@@ -13,7 +13,6 @@ import {
   getAverageSpecificEnergy,
   getAveragePowerFactor,
 } from '@/data/mock-energy';
-import { mockPlants } from '@/data/mock-plants';
 import {
   Zap,
   DollarSign,
@@ -32,6 +31,7 @@ import {
   Activity,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { usePlants } from '@/lib/api/hooks';
 import {
   LineChart,
   Line,
@@ -59,6 +59,11 @@ import { format } from 'date-fns';
 const COLORS = ['#0066ff', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 
 export default function EnergyPage() {
+  // Plant list from the database. Was a fixture array whose ids,
+  // names and online/offline status were fixed at build time.
+  const { data: livePlants } = usePlants();
+  const mockPlants = livePlants ?? [];
+
   const [isLoading, setIsLoading] = useState(true);
   const [selectedPlant, setSelectedPlant] = useState<string>('all');
   const [timeRange, setTimeRange] = useState<string>('24h');

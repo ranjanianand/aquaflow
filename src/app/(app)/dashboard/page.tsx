@@ -11,27 +11,28 @@ import { AlertSummaryBar } from '@/components/dashboard/alert-summary-bar';
 import { PredictiveSummary } from '@/components/dashboard/predictive-summary';
 import { ProcessEfficiencyCard } from '@/components/dashboard/process-efficiency-card';
 import { Building2, Cpu, Bell, Droplets } from 'lucide-react';
-import { getOnlinePlantsCount, getTotalSensorCount } from '@/data/mock-plants';
-import { getActiveAlertsCount, getCriticalAlertsCount } from '@/data/mock-alerts';
 import { DashboardSkeleton } from '@/components/shared/loading-skeleton';
+import { DataFreshness } from '@/components/shared/data-freshness';
+import { useKpis } from '@/lib/api/hooks';
 
 export default function DashboardPage() {
-  const [isLoading, setIsLoading] = useState(true);
+  // One endpoint serves the whole strip. Previously five separate mock
+  // helpers, each counting a different fixture, so the numbers could not be
+  // guaranteed to agree with each other or with the screens below.
+  const { data: kpis, error, loading } = useKpis();
 
-  // Simulate initial data loading
-  useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), 800);
-    return () => clearTimeout(timer);
-  }, []);
+  const onlinePlants = kpis?.plantsOnline ?? 0;
+  const totalPlants = kpis?.plantsTotal ?? 0;
+  const totalSensors = kpis?.sensorsTotal ?? 0;
+  const criticalAlerts = kpis?.alertsCritical ?? 0;
+  const activeAlerts = criticalAlerts + (kpis?.alertsWarning ?? 0);
 
-  const onlinePlants = getOnlinePlantsCount();
-  const totalPlants = 6; // Total plant count
-  const totalSensors = getTotalSensorCount();
-  const activeAlerts = getActiveAlertsCount();
-  const criticalAlerts = getCriticalAlertsCount();
+  const isLoading = loading && !kpis;
 
-  // Calculate total volume (mock)
-  const totalVolume = 12847;
+  // The treated-volume tile is gone. It read a hardcoded 12,847 m3 — there is
+  // no flow totaliser in the readings, so the figure cannot be derived. A
+  // fabricated number on an overview screen is the one most likely to be
+  // repeated in a meeting.
 
   // Get current date for welcome message
   const today = new Date();
@@ -62,12 +63,13 @@ export default function DashboardPage() {
             <h1 className="text-xl font-semibold">Welcome back, Operator</h1>
             <p className="text-sm text-muted-foreground mt-0.5">{formattedDate}</p>
           </div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-            </span>
-            All systems operational
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            {kpis?.lastIngestReconciled === false && (
+              <span className="text-red-600 font-medium">
+                Last ingest failed reconciliation
+              </span>
+            )}
+            <DataFreshness newest={kpis?.lastIngest ?? null} error={error} loading={loading} />
           </div>
         </div>
 
@@ -78,9 +80,14 @@ export default function DashboardPage() {
               title="Active Plants"
               value={`${onlinePlants}/${totalPlants}`}
               icon={Building2}
-              status="success"
+              status={onlinePlants === totalPlants ? 'success' : onlinePlants ? 'warning' : 'danger'}
               color="blue"
-              trend={{ value: 'All operational', direction: 'neutral' }}
+              trend={{
+                value: onlinePlants === totalPlants
+                  ? 'All reporting'
+                  : `${totalPlants - onlinePlants} not reporting`,
+                direction: 'neutral',
+              }}
             />
             <StatusCard
               title="Total Sensors"
@@ -88,7 +95,7 @@ export default function DashboardPage() {
               icon={Cpu}
               status="success"
               color="green"
-              trend={{ value: '98% online', direction: 'up' }}
+              trend={{ value: 'configured', direction: 'neutral' }}
             />
             <StatusCard
               title="Active Alerts"
@@ -102,12 +109,15 @@ export default function DashboardPage() {
               }}
             />
             <StatusCard
-              title="Volume Today"
-              value={totalVolume.toLocaleString()}
-              subtitle="m³ processed"
+              title="Rows Ingested"
+              value={(kpis?.lastIngestRows ?? 0).toLocaleString()}
+              subtitle="last run"
               icon={Droplets}
               color="blue"
-              trend={{ value: '+12%', direction: 'up' }}
+              trend={{
+                value: kpis?.lastIngestReconciled ? 'reconciled' : 'not verified',
+                direction: 'neutral',
+              }}
             />
           </div>
         </section>

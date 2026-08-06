@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Header } from '@/components/layout/header';
+import { usePlants } from '@/lib/api/hooks';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -35,7 +36,6 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { mockPlants } from '@/data/mock-plants';
 import { Node } from '@xyflow/react';
 import Link from 'next/link';
 
@@ -74,6 +74,11 @@ const EquipmentIcon: React.FC<{ type: EquipmentType; className?: string }> = ({ 
 };
 
 export default function ProcessFlowPage() {
+  // Plant list from the database. Was a fixture array whose ids,
+  // names and online/offline status were fixed at build time.
+  const { data: livePlants } = usePlants();
+  const mockPlants = livePlants ?? [];
+
   const [selectedPlant, setSelectedPlant] = useState('plant-1');
   const [selectedEquipment, setSelectedEquipment] = useState<Node<EquipmentNodeData> | null>(null);
 
@@ -87,6 +92,23 @@ export default function ProcessFlowPage() {
         title="Process Flow Diagram"
         subtitle="Interactive P&ID visualization with drag, drop, and connect"
       />
+
+      {/* The equipment on this diagram — vessels, pumps, valves and the
+          readings shown against them — is illustrative. There is no equipment
+          table in the database and nothing maps a diagram node to a sensor
+          tag, so these figures cannot be derived. Labelled rather than
+          silently left in place: an unmarked P&ID reads as plant state.
+
+          /process-flow-schematic is already switched off in features.ts for
+          the same reason. Whether this one follows is a scope decision. */}
+      <div className="mx-4 mt-3 border-l-4 border-amber-500 bg-amber-50 px-4 py-2">
+        <p className="text-xs text-amber-900">
+          <span className="font-bold uppercase">Illustrative diagram</span>
+          {' — '}equipment layout and the values shown on it are examples, not
+          plant data. Live readings are on{' '}
+          <a href="/monitoring" className="underline font-medium">Monitoring</a>.
+        </p>
+      </div>
 
       <div className="p-4">
         {/* Process Flow Canvas - Full Height */}

@@ -50,9 +50,9 @@ import {
   type ServicePriority,
   type ServiceType,
 } from '@/data/mock-services';
-import { mockPlants } from '@/data/mock-plants';
 import { format, formatDistanceToNow, subDays } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { usePlants } from '@/lib/api/hooks';
 import {
   BarChart,
   Bar,
@@ -142,6 +142,11 @@ function ActionMenu({
 type TabValue = 'overview' | 'tickets' | 'technicians' | 'schedule';
 
 export default function ServiceMonitorPage() {
+  // Plant list from the database. Was a fixture array whose ids,
+  // names and online/offline status were fixed at build time.
+  const { data: livePlants } = usePlants();
+  const mockPlants = livePlants ?? [];
+
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');

@@ -1,5 +1,9 @@
 'use client';
 
+import { DataFreshness } from '@/components/shared/data-freshness';
+import { usePlants, useSensors } from '@/lib/api/hooks';
+import type { LiveSensor } from '@/lib/api/client';
+
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
@@ -31,14 +35,38 @@ const sensorThresholds: Record<string, { warningLow: number; warningHigh: number
   do: { warningLow: 6, warningHigh: 12, criticalLow: 4, criticalHigh: 14 },
 };
 
-const initialSensors: SensorData[] = [
-  { id: 'ph', name: 'pH Level', value: 8.3, unit: '', min: 0, max: 14, trend: 'up', status: 'warning' },
-  { id: 'temp', name: 'Temperature', value: 38, unit: '°C', min: 0, max: 50, trend: 'up', status: 'warning' },
-  { id: 'pressure', name: 'Pressure', value: 4.2, unit: 'bar', min: 0, max: 5, trend: 'stable', status: 'critical' },
-  { id: 'turbidity', name: 'Turbidity', value: 0.8, unit: 'NTU', min: 0, max: 10, trend: 'down', status: 'normal' },
-  { id: 'chlorine', name: 'Chlorine', value: 1.2, unit: 'mg/L', min: 0, max: 5, trend: 'stable', status: 'normal' },
-  { id: 'do', name: 'Dissolved O₂', value: 3.5, unit: 'mg/L', min: 0, max: 15, trend: 'down', status: 'critical' },
-];
+// One representative sensor per parameter, taken from the database. A fixed
+// array stood here and a timer nudged each value every three seconds with
+// seeded noise — a "Real-Time Sensors" panel whose numbers came from
+// Math.sin, on the same screen as the true reading count.
+//
+// Where several sensors share a parameter, the worst status wins: an overview
+// tile that averages a critical filter reading with four normal ones hides
+// exactly the thing it exists to surface.
+const RANK = { critical: 2, warning: 1, normal: 0 } as const;
+
+function pickRepresentative(sensors: LiveSensor[]): SensorData[] {
+  const byParam = new Map<string, LiveSensor>();
+  for (const s of sensors) {
+    const held = byParam.get(s.type);
+    if (!held || RANK[s.status] > RANK[held.status]) byParam.set(s.type, s);
+  }
+  return [...byParam.values()]
+    .sort((a, b) => RANK[b.status] - RANK[a.status] || a.type.localeCompare(b.type))
+    .slice(0, 6)
+    .map((s) => ({
+      id: s.id,
+      name: s.name.split(' - ')[0],
+      value: s.currentValue,
+      unit: s.unit,
+      // Axis from the alarm band, widened so a breach is visible rather than
+      // pinned to the end of the bar.
+      min: Math.min(s.critMin ?? s.minThreshold, s.currentValue),
+      max: Math.max(s.critMax ?? s.maxThreshold, s.currentValue),
+      trend: 'stable' as const,
+      status: s.status,
+    }));
+}
 
 function SensorCard({ sensor }: { sensor: SensorData }) {
   const percentage = ((sensor.value - sensor.min) / (sensor.max - sensor.min)) * 100;
@@ -88,53 +116,13 @@ function SensorCard({ sensor }: { sensor: SensorData }) {
 }
 
 export function RealtimeGauges() {
-  const [sensors, setSensors] = useState<SensorData[]>(initialSensors);
-  const [tick, setTick] = useState(0);
-
-  // Simulate real-time updates
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setTick((t) => t + 1);
-    }, 3000);
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    if (tick === 0) return;
-
-    setSensors((prev) =>
-      prev.map((sensor, idx) => {
-        const seed = tick * 100 + idx;
-        const variation = (seededRandom(seed) - 0.5) * 0.2;
-        const range = sensor.max - sensor.min;
-        let newValue = sensor.value + variation * range * 0.1;
-
-        // Keep within bounds
-        newValue = Math.max(sensor.min + range * 0.05, Math.min(sensor.max - range * 0.05, newValue));
-
-        // Determine trend
-        const diff = newValue - sensor.value;
-        const trend: 'up' | 'down' | 'stable' = Math.abs(diff) < 0.01 ? 'stable' : diff > 0 ? 'up' : 'down';
-
-        // Determine status based on realistic thresholds
-        const thresholds = sensorThresholds[sensor.id];
-        let status: 'normal' | 'warning' | 'critical' = 'normal';
-
-        if (thresholds) {
-          // Critical if outside critical thresholds
-          if (newValue <= thresholds.criticalLow || newValue >= thresholds.criticalHigh) {
-            status = 'critical';
-          }
-          // Warning if outside warning thresholds
-          else if (newValue <= thresholds.warningLow || newValue >= thresholds.warningHigh) {
-            status = 'warning';
-          }
-        }
-
-        return { ...sensor, value: Math.round(newValue * 100) / 100, trend, status };
-      })
-    );
-  }, [tick]);
+  const { data: plants } = usePlants();
+  // The first plant that is actually reporting; falls back to the first.
+  const plant = plants?.find((p) => p.status !== 'offline') ?? plants?.[0] ?? null;
+  const { data: liveSensors, loading } = useSensors(plant?.id ?? null, 0);
+  const sensors = pickRepresentative(liveSensors ?? []);
+  const newest = liveSensors?.reduce<Date | null>(
+    (m, s) => (!m || s.lastUpdated > m ? s.lastUpdated : m), null) ?? null;
 
   return (
     <div className="bg-card rounded-lg border border-border">
@@ -142,11 +130,7 @@ export function RealtimeGauges() {
       <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
         <h3 className="text-sm font-semibold">Real-Time Sensors</h3>
         <div className="flex items-center gap-2">
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500/50 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-          </span>
-          <span className="text-xs text-muted-foreground">Live</span>
+          <DataFreshness newest={newest} loading={loading} />
         </div>
       </div>
 

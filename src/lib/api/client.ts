@@ -98,6 +98,16 @@ export async function fetchSensors(
   }));
 }
 
+/** Every configured sensor, all plants, no history. For fleet views. */
+export async function fetchAllSensors(signal?: AbortSignal): Promise<LiveSensor[]> {
+  const raw = await get<ApiSensor[]>('/sensors', signal);
+  return raw.map((s) => ({
+    ...s,
+    lastUpdated: date(s.lastUpdated),
+    history: (s.history ?? []).map(reading),
+  }));
+}
+
 export interface TrendPoint {
   timestamp: Date;
   value: number | null;
@@ -165,4 +175,29 @@ export async function fetchKpis(signal?: AbortSignal): Promise<Kpis> {
     signal,
   );
   return { ...raw, lastIngest: raw.lastIngest ? new Date(raw.lastIngest) : null };
+}
+
+export interface AlertTrendDay {
+  date: string;
+  critical: number;
+  warning: number;
+  alerts: number;
+  sensors: number;
+}
+
+export async function fetchAlertTrend(days = 7, signal?: AbortSignal): Promise<AlertTrendDay[]> {
+  return get<AlertTrendDay[]>(`/alerts/trend?days=${days}`, signal);
+}
+
+export interface AlertHour {
+  hour: string;
+  timestamp: string;
+  high: number;
+  medium: number;
+  low: number;
+  total: number;
+}
+
+export async function fetchAlertsHourly(hours = 24, signal?: AbortSignal): Promise<AlertHour[]> {
+  return get<AlertHour[]>(`/alerts/hourly?hours=${hours}`, signal);
 }

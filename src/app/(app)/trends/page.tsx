@@ -14,8 +14,8 @@ import {
   ComposedChart,
   Legend,
 } from 'recharts';
-import { mockPlants } from '@/data/mock-plants';
-import { getSensorsByPlant, mockSensors } from '@/data/mock-sensors';
+import { usePlants, useSensors } from '@/lib/api/hooks';
+import { useTrend, useTrendComparison } from '@/lib/api/use-trends';
 import { Sensor } from '@/types';
 import {
   Download,
@@ -45,116 +45,69 @@ const COMPARISON_COLORS = [
   '#ef4444', // Red
 ];
 
-// Generate trend data with more points for longer periods
-const generateTrendData = (sensor: Sensor, days: number, seed: number = 0) => {
-  const data = [];
-  const now = Date.now();
-  const pointsPerDay = days <= 7 ? 24 : days <= 30 ? 4 : 1; // hourly for 7D, 6-hourly for 30D, daily for 90D
-  const totalPoints = days * pointsPerDay;
-  const interval = (days * 24 * 3600000) / totalPoints;
+// Trend series come from the readings database via useTrend /
+// useTrendComparison. Two generators previously stood here, building charts
+// from Math.sin(seed) — plausible-looking lines with nothing behind them.
 
-  for (let i = totalPoints; i >= 0; i--) {
-    const timestamp = new Date(now - i * interval);
-    const baseValue = sensor.currentValue;
-    // Use seeded random for consistent data
-    const seedValue = seed + i + sensor.id.charCodeAt(0);
-    const random = Math.sin(seedValue) * 10000;
-    const variation = ((random - Math.floor(random)) - 0.5) * (sensor.maxThreshold - sensor.minThreshold) * 0.4;
-
-    data.push({
-      time: days <= 7
-        ? timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        : timestamp.toLocaleDateString([], { month: 'short', day: 'numeric' }),
-      date: timestamp.toLocaleDateString([], { month: 'short', day: 'numeric' }),
-      timestamp: timestamp.getTime(),
-      value: parseFloat((baseValue + variation).toFixed(2)),
-    });
-  }
-
-  return data;
-};
-
-// Generate comparison data for multiple sensors
-const generateComparisonData = (sensors: Sensor[], days: number) => {
-  if (sensors.length === 0) return [];
-
-  const now = Date.now();
-  const pointsPerDay = days <= 7 ? 24 : days <= 30 ? 4 : 1;
-  const totalPoints = days * pointsPerDay;
-  const interval = (days * 24 * 3600000) / totalPoints;
-
-  const data = [];
-
-  for (let i = totalPoints; i >= 0; i--) {
-    const timestamp = new Date(now - i * interval);
-    const point: Record<string, number | string> = {
-      time: days <= 7
-        ? timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        : timestamp.toLocaleDateString([], { month: 'short', day: 'numeric' }),
-      timestamp: timestamp.getTime(),
-    };
-
-    sensors.forEach((sensor, idx) => {
-      const seedValue = idx * 1000 + i + sensor.id.charCodeAt(0);
-      const random = Math.sin(seedValue) * 10000;
-      const variation = ((random - Math.floor(random)) - 0.5) * (sensor.maxThreshold - sensor.minThreshold) * 0.4;
-      point[sensor.id] = parseFloat((sensor.currentValue + variation).toFixed(2));
-    });
-
-    data.push(point);
-  }
-
-  return data;
-};
+const timeRangeDays: Record<TimeRange, number> = { '7D': 7, '30D': 30, '90D': 90 };
 
 export default function TrendsPage() {
-  const [isLoading, setIsLoading] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>('single');
-  const [selectedPlant, setSelectedPlant] = useState(mockPlants[0]?.id || '');
+  const [selectedPlant, setSelectedPlant] = useState('');
   const [selectedSensor, setSelectedSensor] = useState<string>('');
   const [timeRange, setTimeRange] = useState<TimeRange>('7D');
-  const [sensors, setSensors] = useState<Sensor[]>([]);
 
   // Compare mode state
   const [comparisonSensors, setComparisonSensors] = useState<Sensor[]>([]);
   const [showSensorPicker, setShowSensorPicker] = useState(false);
 
-  // Simulate initial data loading
-  useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), 800);
-    return () => clearTimeout(timer);
-  }, []);
+  const { data: plants } = usePlants();
+  const { data: plantSensors, loading: sensorsLoading } = useSensors(selectedPlant || null);
+  const sensors: Sensor[] = plantSensors ?? [];
 
-  // Load sensors when plant changes
+  // Default to the first plant once the list arrives.
   useEffect(() => {
-    if (selectedPlant) {
-      const plantSensors = getSensorsByPlant(selectedPlant);
-      setSensors(plantSensors);
-      if (plantSensors.length > 0 && !selectedSensor) {
-        setSelectedSensor(plantSensors[0].id);
-      }
+    if (!selectedPlant && plants?.length) setSelectedPlant(plants[0].id);
+  }, [plants, selectedPlant]);
+
+  // Default to the first sensor of whichever plant is selected. Clearing on a
+  // plant change matters: a sensor id from the previous plant would request
+  // history that returns nothing, and the chart would read as "no data".
+  useEffect(() => {
+    if (sensors.length && !sensors.some((s) => s.id === selectedSensor)) {
+      setSelectedSensor(sensors[0].id);
     }
-  }, [selectedPlant, selectedSensor]);
+  }, [sensors, selectedSensor]);
 
   const currentSensor = sensors.find((s) => s.id === selectedSensor);
+  const days = timeRangeDays[timeRange];
 
-  const timeRangeDays: Record<TimeRange, number> = {
-    '7D': 7,
-    '30D': 30,
-    '90D': 90,
+  const { rows: chartData, loading: trendLoading } = useTrend(
+    currentSensor?.id ?? null, days);
+  const { rows: comparisonData } = useTrendComparison(
+    comparisonSensors.map((s) => s.id), days);
+
+  const isLoading = (sensorsLoading && !plantSensors) || (trendLoading && !chartData.length);
+
+  // Period-over-period change, from the loaded series. These were three fixed
+  // literals — +2.3%, -1.8%, +5.2% — identical for every sensor, plant and
+  // time range, which made them look like findings rather than decoration.
+  const periodChange = (windowHours: number): number | null => {
+    if (chartData.length < 4) return null;
+    const end = chartData[chartData.length - 1].timestamp;
+    const cutoff = end - windowHours * 3600_000;
+    const recent = chartData.filter((d) => d.timestamp > cutoff);
+    const prior = chartData.filter(
+      (d) => d.timestamp <= cutoff && d.timestamp > cutoff - windowHours * 3600_000);
+    if (!recent.length || !prior.length) return null;
+    const mean = (xs: typeof recent) => xs.reduce((a, d) => a + d.value, 0) / xs.length;
+    const before = mean(prior);
+    if (!before) return null;
+    return ((mean(recent) - before) / before) * 100;
   };
-
-  // Single sensor chart data
-  const chartData = useMemo(() => {
-    if (!currentSensor) return [];
-    return generateTrendData(currentSensor, timeRangeDays[timeRange]);
-  }, [currentSensor, timeRange]);
-
-  // Comparison chart data
-  const comparisonData = useMemo(() => {
-    if (comparisonSensors.length === 0) return [];
-    return generateComparisonData(comparisonSensors, timeRangeDays[timeRange]);
-  }, [comparisonSensors, timeRange]);
+  const pct = (v: number | null) => (v === null ? 'n/a' : `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`);
+  const tone = (v: number | null) =>
+    v === null ? 'text-slate-400' : v >= 0 ? 'text-emerald-600' : 'text-red-600';
 
   // Calculate statistics for single sensor
   const stats = useMemo(() => {
@@ -289,7 +242,7 @@ export default function TrendsPage() {
                   onChange={(e) => setSelectedPlant(e.target.value)}
                   className="h-8 px-3 pr-8 text-[11px] font-bold uppercase border-2 border-slate-300 bg-white appearance-none cursor-pointer focus:outline-none focus:border-slate-500"
                 >
-                  {mockPlants.map((plant) => (
+                  {(plants ?? []).map((plant) => (
                     <option key={plant.id} value={plant.id}>
                       {plant.name}
                     </option>
@@ -374,8 +327,13 @@ export default function TrendsPage() {
                 <div className="sticky top-0 bg-slate-100 px-3 py-2 border-b border-slate-200">
                   <span className="text-[10px] font-bold uppercase text-slate-600">Select a sensor to compare</span>
                 </div>
-                {mockPlants.map((plant) => {
-                  const plantSensors = getSensorsByPlant(plant.id);
+                {/* Only the selected plant. The mock version listed every
+                    plant's sensors because getSensorsByPlant() read a
+                    synchronous array; over an API that is one request per
+                    plant to populate a dropdown. Change the plant selector
+                    above to compare against a different site. */}
+                {(plants ?? []).filter((p) => p.id === selectedPlant).map((plant) => {
+                  const plantSensors: Sensor[] = sensors;
                   return (
                     <div key={plant.id}>
                       <div className="px-3 py-1.5 bg-slate-50 border-b border-slate-200">
@@ -670,15 +628,15 @@ export default function TrendsPage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="text-center p-4 bg-slate-50 border border-slate-200">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">Today vs Yesterday</p>
-                  <p className="text-2xl font-bold font-mono text-emerald-600">+2.3%</p>
+                  <p className={`text-2xl font-bold font-mono ${tone(periodChange(24))}`}>{pct(periodChange(24))}</p>
                 </div>
                 <div className="text-center p-4 bg-slate-50 border border-slate-200">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">This Week vs Last Week</p>
-                  <p className="text-2xl font-bold font-mono text-red-600">-1.8%</p>
+                  <p className={`text-2xl font-bold font-mono ${tone(periodChange(168))}`}>{pct(periodChange(168))}</p>
                 </div>
                 <div className="text-center p-4 bg-slate-50 border border-slate-200">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">This Month vs Last Month</p>
-                  <p className="text-2xl font-bold font-mono text-emerald-600">+5.2%</p>
+                  <p className={`text-2xl font-bold font-mono ${tone(periodChange(720))}`}>{pct(periodChange(720))}</p>
                 </div>
               </div>
             </div>

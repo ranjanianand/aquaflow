@@ -21,8 +21,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { mockPlants, getOnlinePlantsCount, getTotalSensorCount } from '@/data/mock-plants';
-import { mockSensors, getSensorsByPlant, getSensorsByStatus } from '@/data/mock-sensors';
+import { usePlants, useKpis } from '@/lib/api/hooks';
+import { useAllSensors } from '@/lib/api/hooks';
 import {
   mockAssets,
   getOperationalAssetsCount,
@@ -153,6 +153,17 @@ const maintenanceSchedule: MaintenanceItem[] = [
 ];
 
 export default function AssetsPage() {
+  // Plants, sensors and counts from the database.
+  const { data: livePlants } = usePlants();
+  const { data: liveSensors } = useAllSensors();
+  const { data: kpis } = useKpis();
+  const mockSensors = liveSensors ?? [];
+  const getSensorsByStatus = (status: string) =>
+    mockSensors.filter((s) => s.status === status);
+  const mockPlants = livePlants ?? [];
+  const getOnlinePlantsCount = () => kpis?.plantsOnline ?? 0;
+  const getTotalSensorCount = () => kpis?.sensorsTotal ?? 0;
+
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [searchQuery, setSearchQuery] = useState('');

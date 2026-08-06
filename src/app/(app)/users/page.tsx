@@ -15,7 +15,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { mockUsers, roleInfo, rolePermissions } from '@/data/mock-users';
-import { mockPlants } from '@/data/mock-plants';
+import { usePlants } from '@/lib/api/hooks';
 import { User, UserRole } from '@/types';
 import {
   Users,
@@ -90,6 +90,11 @@ const activityLog = [
 type TabType = 'users' | 'permissions' | 'activity';
 
 export default function UsersPage() {
+  // Plant list from the database. Was a fixture array whose ids,
+  // names and online/offline status were fixed at build time.
+  const { data: livePlants } = usePlants();
+  const mockPlants = livePlants ?? [];
+
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('all');

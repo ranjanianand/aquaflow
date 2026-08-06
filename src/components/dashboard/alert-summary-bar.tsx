@@ -1,5 +1,7 @@
 'use client';
 
+import { useAlertsHourly } from '@/lib/api/hooks';
+
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface HourlyAlertData {
@@ -16,53 +18,37 @@ const seededRandom = (seed: number): number => {
   return x - Math.floor(x);
 };
 
-// Generate 24 hours of alert data
-const generateHourlyData = (): HourlyAlertData[] => {
-  const data: HourlyAlertData[] = [];
-  const now = new Date();
-  const currentHour = now.getHours();
+// Hourly breach counts come from the API. What stood here generated 24 hours
+// of seeded-random alerts — a distribution chart with no distribution behind
+// it, sitting directly beneath a KPI tile showing the true count.
 
-  for (let i = 23; i >= 0; i--) {
-    const hour = (currentHour - i + 24) % 24;
-    const seed = hour * 17;
-
-    // More alerts during working hours (6-22)
-    const isWorkHours = hour >= 6 && hour <= 22;
-    const baseMultiplier = isWorkHours ? 1.5 : 0.5;
-
-    const high = Math.floor(seededRandom(seed) * 2 * baseMultiplier);
-    const medium = Math.floor(seededRandom(seed + 1) * 4 * baseMultiplier);
-    const low = Math.floor(seededRandom(seed + 2) * 3 * baseMultiplier);
-
-    data.push({
-      hour: `${hour.toString().padStart(2, '0')}:00`,
-      high,
-      medium,
-      low,
-      total: high + medium + low,
-    });
-  }
-
-  return data;
-};
-
-const hourlyData = generateHourlyData();
-
-// Calculate totals
-const totals = hourlyData.reduce(
-  (acc, hour) => ({
-    high: acc.high + hour.high,
-    medium: acc.medium + hour.medium,
-    low: acc.low + hour.low,
-    total: acc.total + hour.total,
-  }),
-  { high: 0, medium: 0, low: 0, total: 0 }
-);
-
-// Find peak hour
-const peakHour = hourlyData.reduce((max, hour) => (hour.total > max.total ? hour : max), hourlyData[0]);
+const peakHourOf = (hourlyData: HourlyAlertData[]) => hourlyData.reduce((max, hour) => (hour.total > max.total ? hour : max), hourlyData[0]);
 
 export function AlertSummaryBar() {
+  const { data, loading } = useAlertsHourly(24);
+  const hourlyData: HourlyAlertData[] = data ?? [];
+  const totals = hourlyData.reduce(
+    (t, h) => ({
+      high: t.high + h.high,
+      medium: t.medium + h.medium,
+      low: t.low + h.low,
+      total: t.total + h.total,
+    }),
+    { high: 0, medium: 0, low: 0, total: 0 },
+  );
+  const peakHour = hourlyData.length ? peakHourOf(hourlyData) : { hour: '--' };
+  // Averaged over buckets that exist, not a fixed 24. A partial day would
+  // otherwise read as a quiet one.
+  const perHour = hourlyData.length ? totals.total / hourlyData.length : 0;
+
+  if (!loading && !hourlyData.length) {
+    return (
+      <div className="bg-card rounded-lg border border-border px-5 py-8 text-center">
+        <p className="text-sm text-muted-foreground">No readings in the last 24 hours</p>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-card rounded-lg border border-border">
       {/* Header */}
@@ -100,7 +86,7 @@ export function AlertSummaryBar() {
             <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Peak Hour</p>
           </div>
           <div className="text-center">
-            <p className="text-2xl font-bold tabular-nums">{(totals.total / 24).toFixed(1)}</p>
+            <p className="text-2xl font-bold tabular-nums">{perHour.toFixed(1)}</p>
             <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Avg/Hour</p>
           </div>
         </div>

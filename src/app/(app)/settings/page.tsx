@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { currentUser } from '@/data/mock-users';
+import { usePlants } from '@/lib/api/hooks';
 import {
   mockGateways,
   mqttBrokerConfig,
@@ -51,7 +52,6 @@ import {
   getTotalDataPointsPerSecond,
   Gateway,
 } from '@/data/mock-gateways';
-import { mockPlants } from '@/data/mock-plants';
 import { X, MoreVertical } from 'lucide-react';
 import { FEATURES } from '@/lib/features';
 
@@ -160,6 +160,11 @@ const getAuditTypeColor = (type: string) => {
 };
 
 export default function SettingsPage() {
+  // Plant list from the database. Was a fixture array whose ids,
+  // names and online/offline status were fixed at build time.
+  const { data: livePlants } = usePlants();
+  const mockPlants = livePlants ?? [];
+
   const [activeTab, setActiveTab] = useState<TabType>('notifications');
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState({

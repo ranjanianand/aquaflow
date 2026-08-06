@@ -11,7 +11,6 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from 'recharts';
-import { mockPlants } from '@/data/mock-plants';
 import {
   Cpu,
   TrendingUp,
@@ -26,6 +25,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { usePlants } from '@/lib/api/hooks';
 import { ThresholdForecastChart } from '@/components/predictive/threshold-forecast-chart';
 import { MaintenanceCalendar } from '@/components/predictive/maintenance-calendar';
 import { RiskMatrix } from '@/components/predictive/risk-matrix';
@@ -174,6 +174,11 @@ const generateAnomalyChartData = () => {
 const anomalyChartData = generateAnomalyChartData();
 
 export default function PredictivePage() {
+  // Plant list from the database. Was a fixture array whose ids,
+  // names and online/offline status were fixed at build time.
+  const { data: livePlants } = usePlants();
+  const mockPlants = livePlants ?? [];
+
   const [isLoading, setIsLoading] = useState(true);
   const [selectedPlant, setSelectedPlant] = useState('all');
 
