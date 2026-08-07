@@ -176,6 +176,34 @@ function EventRow({ event }: { event: Event }) {
 }
 
 export function RecentEventsPanel() {
+  // An operator event log — acknowledgements, setpoint changes, mode
+  // switches, maintenance notes. Every one of those is an action someone
+  // takes, and none are recorded: there is no events table and no write path
+  // from this system back to the plant.
+  //
+  // The fixture named plants that do not exist here and timestamped them
+  // relative to page load, so the log always looked minutes fresh no matter
+  // how stale the data was. Alarms are shown by the panel beside this one and
+  // are real.
+  return (
+    <div className="border-2 border-slate-300 overflow-hidden h-full flex flex-col bg-white">
+      <div className="bg-slate-100 px-4 py-2.5 border-b-2 border-slate-300">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
+          Recent Events
+        </span>
+      </div>
+      <div className="flex-1 px-4 py-6 text-center">
+        <p className="text-sm text-slate-400 mb-1">No event log</p>
+        <p className="text-[11px] text-slate-500">
+          Operator actions are not recorded. Alarms appear in the panel
+          alongside.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function UnusedRecentEventsPanel() {
   const criticalCount = recentEvents.filter(e => e.severity === 'critical').length;
   const last1Hour = recentEvents.filter(e =>
     (Date.now() - e.timestamp.getTime()) < 1000 * 60 * 60

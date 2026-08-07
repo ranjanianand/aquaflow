@@ -1,6 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
+import { useKpis, useLiveKpis } from '@/lib/api/hooks';
 import {
   Building2,
   Cpu,
@@ -19,17 +20,56 @@ interface KPIItem {
   icon: React.ElementType;
 }
 
-const kpiData: KPIItem[] = [
-  { label: 'PLANTS', value: '6/6', status: 'normal', icon: Building2 },
-  { label: 'SENSORS', value: 142, status: 'normal', icon: Cpu },
-  { label: 'ALERTS', value: 3, status: 'warning', icon: AlertTriangle },
-  { label: 'FLOW RATE', value: '2,847', unit: 'm³/h', status: 'normal', icon: Droplets },
-  { label: 'AVG pH', value: '7.2', status: 'normal', icon: Activity },
-  { label: 'TEMP', value: '24.5', unit: '°C', status: 'normal', icon: Thermometer },
-  { label: 'PRESSURE', value: '4.2', unit: 'bar', status: 'normal', icon: Gauge },
-];
+// A fixed array stood here: 6/6 plants, 142 sensors, 3 alerts, 2,847 m3/h.
+// None of it moved, and it sat above a sensor grid reading the same plant.
+//
+// "—" is shown where a parameter has no reporting sensor. Zero would state
+// that the plant measured nothing, which is a different claim from having
+// nothing to measure it with.
+const dash = '—';
 
 export function IndustrialKPIBar() {
+  const { data: kpis } = useKpis();
+  const { data: live } = useLiveKpis();
+
+  const param = (
+    key: string, label: string, unit: string | undefined, icon: React.ElementType,
+  ): KPIItem => {
+    const p = live?.[key];
+    return {
+      label,
+      value: p ? p.value.toLocaleString() : dash,
+      unit: p ? unit : undefined,
+      status: p?.status ?? 'normal',
+      icon,
+    };
+  };
+
+  const kpiData: KPIItem[] = [
+    {
+      label: 'PLANTS',
+      value: kpis ? `${kpis.plantsOnline}/${kpis.plantsTotal}` : dash,
+      // Amber when some plants are silent, red when none are reporting.
+      status: !kpis ? 'normal'
+        : kpis.plantsOnline === kpis.plantsTotal ? 'normal'
+        : kpis.plantsOnline === 0 ? 'critical' : 'warning',
+      icon: Building2,
+    },
+    { label: 'SENSORS', value: kpis?.sensorsTotal ?? dash, status: 'normal', icon: Cpu },
+    {
+      label: 'ALERTS',
+      value: kpis ? kpis.alertsCritical + kpis.alertsWarning : dash,
+      status: !kpis ? 'normal'
+        : kpis.alertsCritical ? 'critical'
+        : kpis.alertsWarning ? 'warning' : 'normal',
+      icon: AlertTriangle,
+    },
+    param('flow', 'FLOW RATE', 'm³/h', Droplets),
+    param('pH', 'AVG pH', undefined, Activity),
+    param('temperature', 'TEMP', '°C', Thermometer),
+    param('pressure', 'PRESSURE', 'bar', Gauge),
+  ];
+
   return (
     <div className="bg-white border-b-2 border-slate-200">
       <div className="flex items-stretch divide-x divide-slate-200 overflow-x-auto">

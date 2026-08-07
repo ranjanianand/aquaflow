@@ -29,11 +29,6 @@ export default function DashboardPage() {
 
   const isLoading = loading && !kpis;
 
-  // The treated-volume tile is gone. It read a hardcoded 12,847 m3 — there is
-  // no flow totaliser in the readings, so the figure cannot be derived. A
-  // fabricated number on an overview screen is the one most likely to be
-  // repeated in a meeting.
-
   // Get current date for welcome message
   const today = new Date();
   const formattedDate = today.toLocaleDateString('en-US', {
@@ -108,14 +103,25 @@ export default function DashboardPage() {
                 direction: criticalAlerts > 0 ? 'down' : 'neutral',
               }}
             />
+            {/* Volume treated, integrated from the outlet flow meter rather
+                than read from a totaliser tag. It previously showed a
+                hardcoded 12,847 m3.
+
+                Shows "no source" rather than 0 when no outlet flow meter is
+                mapped — zero would claim the plant treated nothing, which is
+                a different statement from being unable to measure it. The
+                tile populates on its own once such a tag exists in the
+                register map; no code change is needed for that. */}
             <StatusCard
-              title="Rows Ingested"
-              value={(kpis?.lastIngestRows ?? 0).toLocaleString()}
-              subtitle="last run"
+              title="Volume Treated"
+              value={kpis?.volume24h != null ? kpis.volume24h.toLocaleString() : '—'}
+              subtitle={kpis?.volume24h != null
+                ? `m³, last 24h · ${kpis.volumeSource ?? 'outlet'}`
+                : 'no outlet flow meter mapped'}
               icon={Droplets}
               color="blue"
               trend={{
-                value: kpis?.lastIngestReconciled ? 'reconciled' : 'not verified',
+                value: kpis?.volume24h != null ? 'integrated flow' : 'awaiting a tag',
                 direction: 'neutral',
               }}
             />

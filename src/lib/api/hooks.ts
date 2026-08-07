@@ -12,9 +12,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Alert, Plant } from '@/types';
 import {
-  fetchAlertTrend, fetchAlerts, fetchAlertsHourly, fetchAllSensors, fetchHistory, fetchKpis,
+  fetchAlertTrend, fetchAlerts, fetchAlertsHourly, fetchAllSensors, fetchHistory,
+  fetchCompliance, fetchKpis, fetchLiveKpis,
   fetchPlants, fetchSensors,
-  type AlertHour, type AlertTrendDay, type Kpis, type LiveAlert, type LiveSensor,
+  type AlertHour, type AlertTrendDay, type Compliance, type Kpis, type LiveAlert,
+  type LiveParam,
+  type LiveSensor,
   type TrendPoint,
 } from './client';
 
@@ -153,4 +156,14 @@ export function useAllSensors(pollMs = 60_000) {
 /** Breaches per hour over the most recent 24h of data. */
 export function useAlertsHourly(hours = 24) {
   return useResource<AlertHour[]>((s) => fetchAlertsHourly(hours, s), [hours]);
+}
+
+/** Current average per parameter, for the plant-floor KPI strip. */
+export function useLiveKpis(pollMs = 60_000) {
+  return useResource<Record<string, LiveParam>>((s) => fetchLiveKpis(s), [], pollMs);
+}
+
+/** Share of readings within limits over the recent window. */
+export function useCompliance(hours = 24) {
+  return useResource<Compliance>((s) => fetchCompliance(hours, s), [hours]);
 }

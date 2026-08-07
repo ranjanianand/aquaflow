@@ -1,5 +1,7 @@
 'use client';
 
+import { useAlerts } from '@/lib/api/hooks';
+
 import { cn } from '@/lib/utils';
 import { AlertTriangle, AlertCircle, Info, Clock, CheckCircle } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
@@ -14,44 +16,10 @@ interface Alert {
   status: 'active' | 'acknowledged';
 }
 
-const alerts: Alert[] = [
-  {
-    id: '1',
-    severity: 'critical',
-    type: 'High pH Level',
-    location: 'Plant C - Tank 3',
-    value: '8.9 pH',
-    time: new Date(Date.now() - 1000 * 60 * 5),
-    status: 'active',
-  },
-  {
-    id: '2',
-    severity: 'warning',
-    type: 'Temperature Rising',
-    location: 'Plant B - Reactor 2',
-    value: '28.5°C',
-    time: new Date(Date.now() - 1000 * 60 * 12),
-    status: 'active',
-  },
-  {
-    id: '3',
-    severity: 'warning',
-    type: 'Flow Rate Low',
-    location: 'Plant A - Pump Station',
-    value: '185 m³/h',
-    time: new Date(Date.now() - 1000 * 60 * 25),
-    status: 'acknowledged',
-  },
-  {
-    id: '4',
-    severity: 'info',
-    type: 'Maintenance Due',
-    location: 'Plant D - Filter Unit',
-    value: '2 days',
-    time: new Date(Date.now() - 1000 * 60 * 60),
-    status: 'active',
-  },
-];
+// Alerts come from the database. A fixture array stood here naming plants
+// that do not exist in this deployment — "Plant C - Tank 3", "Plant B -
+// Reactor 2" — with times relative to page load, so they always looked
+// minutes old however stale the data actually was.
 
 function AlertRow({ alert }: { alert: Alert }) {
   const SeverityIcon = alert.severity === 'critical' ? AlertCircle :
@@ -102,6 +70,19 @@ function AlertRow({ alert }: { alert: Alert }) {
 }
 
 export function IndustrialAlertsPanel() {
+  const { data: live } = useAlerts();
+  const alerts: Alert[] = (live ?? []).map((a) => ({
+    id: a.id,
+    severity: a.severity === 'critical' ? 'critical' : 'warning',
+    type: `${a.tag} ${a.value != null && a.limit != null && a.value > a.limit ? 'high' : 'low'}`,
+    location: `${a.plantName} — ${a.sensorName.split(' - ').pop() ?? ''}`,
+    value: a.value != null ? `${a.value} ${a.unit}` : '—',
+    time: a.timestamp,
+    // Everything is active: acknowledging is a write, and there is no write
+    // path back to the plant.
+    status: 'active' as const,
+  }));
+
   const criticalCount = alerts.filter(a => a.severity === 'critical' && a.status === 'active').length;
   const warningCount = alerts.filter(a => a.severity === 'warning' && a.status === 'active').length;
 

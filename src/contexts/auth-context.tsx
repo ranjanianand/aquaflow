@@ -70,11 +70,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (isLoading) return;
 
-    const isPublicPath = PUBLIC_PATHS.some(path => pathname?.startsWith(path));
+    // Compare without a trailing slash. The static export is built with
+    // trailingSlash: true, so the browser is on "/login/" while this test read
+    // "/login" — the equality failed, the post-login redirect never fired, and
+    // signing in appeared to do nothing at all. The session was created
+    // correctly; only the navigation was lost, which is the hardest kind of
+    // failure to spot because nothing errors.
+    const path = pathname?.replace(/\/+$/, '') || '/';
+    const isPublicPath = PUBLIC_PATHS.some(p => path.startsWith(p));
 
     if (!user && !isPublicPath) {
       router.push('/login');
-    } else if (user && pathname === '/login') {
+    } else if (user && isPublicPath) {
       router.push('/dashboard-v2');
     }
   }, [user, isLoading, pathname, router]);

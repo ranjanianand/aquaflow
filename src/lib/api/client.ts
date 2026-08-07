@@ -162,6 +162,13 @@ export interface Kpis {
   sensorsTotal: number;
   alertsCritical: number;
   alertsWarning: number;
+  /** Volume treated over the last 24h of data, m3, integrated from the outlet
+   *  flow meter. null means no such meter is mapped — which is not zero. */
+  volume24h: number | null;
+  /** Which meter the volume came from, e.g. "FLW-1005". Shown on the tile: a
+   *  volume with no stated source cannot be checked, and choosing the meter is
+   *  a judgement about plant layout rather than a direct reading. */
+  volumeSource: string | null;
   /** When data last arrived. Shown so the dashboard cannot imply it is live
    *  when the most recent reading is days old. */
   lastIngest: Date | null;
@@ -200,4 +207,30 @@ export interface AlertHour {
 
 export async function fetchAlertsHourly(hours = 24, signal?: AbortSignal): Promise<AlertHour[]> {
   return get<AlertHour[]>(`/alerts/hourly?hours=${hours}`, signal);
+}
+
+/** Current average per parameter, across every reporting sensor. */
+export interface LiveParam {
+  value: number;
+  unit: string;
+  sensors: number;
+  status: 'normal' | 'warning';
+}
+
+export async function fetchLiveKpis(signal?: AbortSignal): Promise<Record<string, LiveParam>> {
+  return get<Record<string, LiveParam>>('/kpis/live', signal);
+}
+
+export interface Compliance {
+  /** Share of readings inside their alarm band. Not a Water Quality Index —
+   *  that needs a definition (which parameters, what weighting, whose
+   *  standard) that nobody has agreed. This means exactly what it says. */
+  compliancePct: number | null;
+  readings: number;
+  inRange: number;
+  parameters: string[];
+}
+
+export async function fetchCompliance(hours = 24, signal?: AbortSignal): Promise<Compliance> {
+  return get<Compliance>(`/kpis/quality?hours=${hours}`, signal);
 }

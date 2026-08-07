@@ -1,5 +1,9 @@
 'use client';
 
+import { useAllSensors, useCompliance, useLiveKpis } from '@/lib/api/hooks';
+import { useTrend } from '@/lib/api/use-trends';
+import type { LiveSensor } from '@/lib/api/client';
+
 import { cn } from '@/lib/utils';
 import { TrendingUp, TrendingDown, Minus, Maximize2 } from 'lucide-react';
 import {
@@ -30,12 +34,17 @@ interface MiniChartProps {
   setpoint?: number;
   minThreshold?: number;
   maxThreshold?: number;
+  /** No data source exists for this metric. Renders an explicit notice rather
+   *  than a zero — and rather than removing the card, because the metric
+   *  becomes valid the moment the tag exists. */
+  unavailable?: string;
 }
 
 export function IndustrialMiniChart({
   title,
   value,
   unit,
+  unavailable,
   change,
   changeLabel,
   data,
@@ -44,6 +53,18 @@ export function IndustrialMiniChart({
   minThreshold,
   maxThreshold
 }: MiniChartProps) {
+  if (unavailable) {
+    return (
+      <div className="bg-white border border-slate-200 rounded-lg p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">{title}</h3>
+        </div>
+        <p className="text-2xl font-bold font-mono text-slate-300">—</p>
+        <p className="text-[11px] text-slate-500 mt-1">{unavailable}</p>
+      </div>
+    );
+  }
+
   const TrendIcon = change > 0 ? TrendingUp : change < 0 ? TrendingDown : Minus;
   const isPositive = change > 0;
 
@@ -187,102 +208,102 @@ export function IndustrialMiniChart({
 
 // Pre-configured chart cards for the dashboard
 export function FlowRateChart() {
-  const data = [
-    { time: '00:00', value: 2650 },
-    { time: '04:00', value: 2480 },
-    { time: '08:00', value: 2720 },
-    { time: '12:00', value: 2890 },
-    { time: '16:00', value: 2950 },
-    { time: '20:00', value: 2847 },
-    { time: 'Now', value: 2847 },
-  ];
+  // Was seven fixed points around 2,847 m3/h with a "+3.2% vs yesterday" that
+  // never moved. Now the outlet meter's own 24-hour series.
+  const { data: live } = useLiveKpis();
+  const { data: sensors } = useAllSensors();
+
+  const flowSensors: LiveSensor[] = (sensors ?? []).filter((s) => s.type === 'flow');
+  const outlet = flowSensors.find(
+    (s) => /outlet|distribution|dispatch/i.test(s.location ?? '')) ?? flowSensors[0];
+
+  const { rows } = useTrend(outlet?.id ?? null, 1);
+  const series = rows.map((r) => ({ time: r.time, value: r.value }));
+  const flow = live?.flow;
+
+  if (!flow || series.length === 0) {
+    return (
+      <IndustrialMiniChart
+        title="Total Flow Rate" value={0} unit="m³/h" change={0}
+        changeLabel="" data={[]}
+        unavailable="no flow meter reporting"
+      />
+    );
+  }
+
+  // First half against second half of the window — a real change, not a label.
+  const half = Math.floor(series.length / 2);
+  const mean = (xs: typeof series) => xs.reduce((a, d) => a + d.value, 0) / (xs.length || 1);
+  const before = mean(series.slice(0, half));
+  const change = before ? ((mean(series.slice(half)) - before) / before) * 100 : 0;
 
   return (
     <IndustrialMiniChart
       title="Total Flow Rate"
-      value={2847}
+      value={Math.round(series[series.length - 1].value)}
       unit="m³/h"
-      change={3.2}
-      changeLabel="vs yesterday"
-      data={data}
-      status="normal"
-      setpoint={2800}
+      change={Number(change.toFixed(1))}
+      changeLabel="vs earlier today"
+      data={series}
+      status={flow.status === 'warning' ? 'warning' : 'normal'}
     />
   );
 }
 
 export function EnergyConsumptionChart() {
-  const data = [
-    { time: '00:00', value: 420 },
-    { time: '04:00', value: 380 },
-    { time: '08:00', value: 510 },
-    { time: '12:00', value: 580 },
-    { time: '16:00', value: 545 },
-    { time: '20:00', value: 485 },
-    { time: 'Now', value: 485 },
-  ];
-
+  // No energy meters exist. There is no kWh tag in the register map and no
+  // table to hold one, so 485 kWh was invented outright.
+  //
+  // The card stays: if MWTS's feed carries energy meters, this becomes a real
+  // metric and only the query changes.
   return (
     <IndustrialMiniChart
-      title="Energy Consumption"
-      value={485}
-      unit="kWh"
-      change={-5.1}
-      changeLabel="vs yesterday"
-      data={data}
-      status="normal"
-      maxThreshold={600}
+      title="Energy Consumption" value={0} unit="kWh" change={0}
+      changeLabel="" data={[]}
+      unavailable="no energy meter in the register map"
     />
   );
 }
 
 export function WaterQualityChart() {
-  const data = [
-    { time: '00:00', value: 97.2 },
-    { time: '04:00', value: 97.5 },
-    { time: '08:00', value: 96.8 },
-    { time: '12:00', value: 97.1 },
-    { time: '16:00', value: 96.5 },
-    { time: '20:00', value: 96.8 },
-    { time: 'Now', value: 96.8 },
-  ];
-
+  // Was a fixed 96.8%. A Water Quality Index needs a definition nobody has
+  // agreed — which parameters, what weighting, whose standard — so this
+  // reports the plainer, computable thing: the share of readings inside their
+  // alarm band, over turbidity, pH, chlorine and conductivity.
+  const { data } = useCompliance(24);
+  if (!data || data.compliancePct === null) {
+    return (
+      <IndustrialMiniChart
+        title="Readings In Range" value={0} unit="%" change={0}
+        changeLabel="" data={[]}
+        unavailable="no readings in the last 24 hours"
+      />
+    );
+  }
   return (
     <IndustrialMiniChart
-      title="Water Quality Index"
-      value={96.8}
+      title="Readings In Range"
+      value={data.compliancePct}
       unit="%"
-      change={-0.4}
-      changeLabel="vs yesterday"
-      data={data}
-      status="warning"
-      setpoint={97}
-      minThreshold={95}
+      change={0}
+      changeLabel={`${data.inRange} of ${data.readings} readings, 24h`}
+      data={[]}
+      status={data.compliancePct >= 95 ? 'normal'
+            : data.compliancePct >= 90 ? 'warning' : 'critical'}
     />
   );
 }
 
 export function ProcessEfficiencyChart() {
-  const data = [
-    { time: '00:00', value: 94.5 },
-    { time: '04:00', value: 95.2 },
-    { time: '08:00', value: 95.8 },
-    { time: '12:00', value: 96.2 },
-    { time: '16:00', value: 96.5 },
-    { time: '20:00', value: 96.8 },
-    { time: 'Now', value: 96.8 },
-  ];
-
+  // "Process efficiency" has no agreed definition here and no inputs to
+  // compute one — it would need energy per m3, or recovery ratio, or chemical
+  // dose per unit treated. None of those tags exist. The 96.8% shown before
+  // was a number with nothing behind it.
   return (
     <IndustrialMiniChart
-      title="Process Efficiency"
-      value={96.8}
-      unit="%"
-      change={2.4}
-      changeLabel="vs last week"
-      data={data}
-      status="normal"
-      setpoint={95}
+      title="Process Efficiency" value={0} unit="%" change={0}
+      changeLabel="" data={[]}
+      unavailable="needs energy or dosing tags to compute"
     />
   );
 }

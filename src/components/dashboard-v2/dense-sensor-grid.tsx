@@ -25,18 +25,13 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { useDashboardPreferencesStore } from '@/stores/dashboard-preferences-store';
-import { mockSensors, getSensorsByPlant } from '@/data/mock-sensors';
+import { usePlants, useAllSensors } from '@/lib/api/hooks';
 import { Sensor, SensorType } from '@/types';
 
 // Plant data
-const plants = [
-  { id: 'plant-1', name: 'Chennai WTP', location: 'Chennai North - Main Treatment', status: 'online' as const },
-  { id: 'plant-2', name: 'Mumbai WTP', location: 'Mumbai South - Secondary', status: 'online' as const },
-  { id: 'plant-3', name: 'Bangalore WTP', location: 'Bangalore Central - Distribution', status: 'warning' as const },
-  { id: 'plant-4', name: 'Hyderabad WTP', location: 'Hyderabad East - RO Plant', status: 'online' as const },
-  { id: 'plant-5', name: 'Pune WTP', location: 'Pune West - Treatment', status: 'warning' as const },
-  { id: 'plant-6', name: 'Delhi WTP', location: 'Delhi NCR - Compact', status: 'offline' as const },
-];
+// The plant tabs were a fixed array carrying invented statuses — Delhi always
+// offline, Bangalore always warning — regardless of what the database held.
+// They now come from /plants, where status is derived from data freshness.
 
 const sensorTypeLabels: Record<SensorType, string> = {
   pH: 'pH',
@@ -188,7 +183,10 @@ function SensorSelectionModal({
     useDashboardPreferencesStore();
 
   const currentSelected = selectedSensors[plantId] || [];
-  const allPlantSensors = useMemo(() => getSensorsByPlant(plantId), [plantId]);
+  const { data: liveSensors } = useAllSensors();
+  const allPlantSensors = useMemo(
+    () => (liveSensors ?? []).filter((s) => s.plantId === plantId),
+    [liveSensors, plantId]);
 
   // Get unique sensor types for this plant
   const sensorTypes = useMemo(() => {
@@ -453,14 +451,20 @@ export function DenseSensorGrid() {
 
   const { activeTab, setActiveTab, selectedSensors } = useDashboardPreferencesStore();
 
+  const { data: livePlants } = usePlants();
+  const { data: liveSensors } = useAllSensors();
+  const plants = livePlants ?? [];
+  const mockSensors = liveSensors ?? [];
+
   // Set default active tab if not set
-  const currentTab = activeTab || plants[0].id;
+  const currentTab = activeTab || plants[0]?.id;
 
   // Get current plant info
   const currentPlant = plants.find((p) => p.id === currentTab) || plants[0];
 
   // Get all sensors for current plant
-  const allPlantSensors = useMemo(() => getSensorsByPlant(currentTab), [currentTab]);
+  const allPlantSensors = useMemo(
+    () => mockSensors.filter((s) => s.plantId === currentTab), [mockSensors, currentTab]);
 
   // Get selected sensors for current plant OR use default sensors
   const currentSelectedIds = selectedSensors[currentTab] || [];
@@ -489,6 +493,23 @@ export function DenseSensorGrid() {
     return { online, warning, critical, total: displaySensors.length };
   }, [displaySensors]);
 
+  // Placed after every hook. `plants` is empty until /plants responds, so
+  // currentPlant is undefined on the first frame — the fixture array was
+  // synchronous and never was. Returning above the hooks would change the hook
+  // count between renders and throw a different error instead.
+  if (!currentPlant) {
+    return (
+      <div className="space-y-3">
+        <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider px-1">
+          My Sensors
+        </h2>
+        <div className="bg-white border border-slate-200 rounded-lg p-8 text-center">
+          <p className="text-sm text-slate-400">Loading plants…</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3">
       {/* Header Bar */}
@@ -497,9 +518,15 @@ export function DenseSensorGrid() {
           <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider">
             My Sensors
           </h2>
+          {/* Was a permanently pulsing green dot. Now reflects whether this
+              plant is actually reporting. */}
           <span className="relative flex h-2.5 w-2.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+            {currentPlant.status === 'online' && (
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75" />
+            )}
+            <span className={cn('relative inline-flex rounded-full h-2.5 w-2.5',
+              currentPlant.status === 'online' ? 'bg-emerald-500'
+                : currentPlant.status === 'warning' ? 'bg-amber-500' : 'bg-slate-400')} />
           </span>
         </div>
 

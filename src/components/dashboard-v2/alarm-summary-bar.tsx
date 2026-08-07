@@ -2,6 +2,15 @@
 
 import { cn } from '@/lib/utils';
 import { AlertCircle, AlertTriangle, Info, Bell, ChevronRight } from 'lucide-react';
+import { useAlerts } from '@/lib/api/hooks';
+
+/** Relative age of a reading. */
+function ago(d: Date): string {
+  const m = Math.round((Date.now() - d.getTime()) / 60000);
+  if (m < 90) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  return h < 48 ? `${h}h ago` : `${Math.round(h / 24)}d ago`;
+}
 
 interface AlarmCounts {
   critical: number;
@@ -10,16 +19,29 @@ interface AlarmCounts {
   unacknowledged: number;
 }
 
-// Mock data - in production would come from real-time
-const alarmCounts: AlarmCounts = {
-  critical: 1,
-  warning: 2,
-  info: 4,
-  unacknowledged: 2,
-};
-
 export function AlarmSummaryBar() {
+  const { data: alerts } = useAlerts();
+  const list = alerts ?? [];
+
+  const alarmCounts: AlarmCounts = {
+    critical: list.filter((a) => a.severity === 'critical').length,
+    warning: list.filter((a) => a.severity === 'warning').length,
+    // No informational tier exists. Alarms are derived from threshold
+    // breaches; an "info" alarm would come from an operator annotation, and
+    // nothing writes those. The fixed 4 here claimed a category that has
+    // never existed in this system.
+    info: 0,
+    // Every alarm is unacknowledged, because acknowledging one is a write and
+    // there is no write path back to the plant.
+    unacknowledged: list.length,
+  };
   const totalAlarms = alarmCounts.critical + alarmCounts.warning + alarmCounts.info;
+
+  // Worst first, then newest — the same order the alerts screen uses.
+  const latest = [...list].sort(
+    (a, b) => Number(b.severity === 'critical') - Number(a.severity === 'critical')
+      || b.timestamp.getTime() - a.timestamp.getTime(),
+  )[0];
 
   return (
     <div className="bg-slate-50 border-b border-slate-200">
@@ -97,23 +119,29 @@ export function AlarmSummaryBar() {
         {/* Right: Actions */}
         <div className="flex items-center gap-3">
           {/* Latest Alarm Preview */}
-          <div className="hidden md:flex items-center gap-2 text-xs text-slate-500">
-            <span>Latest:</span>
-            <span className="text-red-600 font-semibold">pH HIGH</span>
-            <span className="text-slate-400">at Plant C</span>
-            <span className="text-slate-400 font-mono">5m ago</span>
-          </div>
+          {/* Was "pH HIGH at Plant C 5m ago" — a fixed string naming a plant
+              that does not exist in this deployment, and an age that never
+              advanced. */}
+          {latest && (
+            <div className="hidden md:flex items-center gap-2 text-xs text-slate-500">
+              <span>Latest:</span>
+              <span className={cn('font-semibold',
+                latest.severity === 'critical' ? 'text-red-600' : 'text-amber-600')}>
+                {latest.tag}
+              </span>
+              <span className="text-slate-400">at {latest.plantName}</span>
+              <span className="text-slate-400 font-mono">{ago(latest.timestamp)}</span>
+            </div>
+          )}
 
           <button className="flex items-center gap-1 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 rounded text-xs font-semibold transition-colors border border-slate-300">
             View All
             <ChevronRight className="h-3.5 w-3.5" />
           </button>
 
-          {totalAlarms > 0 && (
-            <button className="px-3 py-1.5 bg-slate-700 hover:bg-slate-800 text-white rounded text-xs font-bold transition-colors">
-              ACK ALL
-            </button>
-          )}
+          {/* ACK ALL is hidden, not disabled. Acknowledging is a write, and
+              there is no write path back to the plant — the button would have
+              done nothing, which is worse than not offering it. */}
         </div>
       </div>
     </div>

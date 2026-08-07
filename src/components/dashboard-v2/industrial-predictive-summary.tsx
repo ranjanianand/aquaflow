@@ -122,6 +122,39 @@ function EquipmentRow({ equipment }: { equipment: EquipmentHealth }) {
 }
 
 export function IndustrialPredictiveSummary() {
+  // Equipment health prediction needs three things this system does not have:
+  // an equipment register, maintenance history, and recorded failures to
+  // learn from. None exist — there is no equipment table, and readings carry
+  // no equipment identity.
+  //
+  // What stood here was a fixture: pumps and membranes at "Plant C" with
+  // health scores and days-to-failure, none of it computed from anything. A
+  // predicted failure date is the single most actionable number on a
+  // dashboard, and inventing one is the most damaging thing this screen could
+  // do — it sends an engineer to a machine for no reason, or worse, implies
+  // the others are fine.
+  //
+  // The component stays. Given equipment data and failure history it becomes
+  // a real feature; only its data source changes.
+  return (
+    <div className="border-2 border-slate-300 overflow-hidden bg-white">
+      <div className="bg-slate-100 px-4 py-2.5 border-b-2 border-slate-300">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
+          Predictive Maintenance
+        </span>
+      </div>
+      <div className="px-4 py-6 text-center">
+        <p className="text-sm text-slate-400 mb-1">No equipment data</p>
+        <p className="text-[11px] text-slate-500">
+          Needs an equipment register and maintenance history. Sensor readings
+          alone cannot predict equipment failure.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function UnusedPredictiveSummary() {
   const criticalCount = equipmentData.filter(e => e.status === 'critical').length;
   const warningCount = equipmentData.filter(e => e.status === 'warning').length;
 
