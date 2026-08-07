@@ -4,17 +4,26 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   devIndicators: false,
 
-  // Bundles only the files the server actually needs, so the deployed image
-  // carries a runtime rather than the whole node_modules tree.
-  output: "standalone",
-
-  // Pin the tracing root to this project.
+  // Static export: plain HTML, CSS and JS that nginx serves directly, with no
+  // Node process in production.
   //
-  // Next walks upwards looking for a workspace root, and on this machine it
-  // finds one in the home directory — so the standalone build emitted
-  // .next/standalone/OneDrive/Desktop/MWTS/git/aquaflow/server.js instead of
-  // .next/standalone/server.js. The Dockerfile's COPY then lands a directory
-  // tree with no server.js at its root and the container exits immediately.
+  // Viable because every route is client-rendered — the build reports them all
+  // as static. Nothing here uses server components for data, server actions,
+  // route handlers or image optimisation, which are the features `export`
+  // removes. All data arrives from the API in the browser.
+  output: "export",
+
+  // Emits /monitoring/index.html rather than /monitoring.html, so nginx
+  // resolves a bare directory path without any rewrite rules.
+  trailingSlash: true,
+
+  // next/image needs a server to optimise. Static export has none, so the
+  // images are passed through unchanged.
+  images: { unoptimized: true },
+
+  // Pin the tracing root to this project. Next walks upwards looking for a
+  // workspace root and finds one in the home directory on this machine, which
+  // sends build output five directories deep under OneDrive/.
   outputFileTracingRoot: path.join(__dirname),
 };
 

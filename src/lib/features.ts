@@ -63,11 +63,18 @@ export const FEATURES = {
   operationalInsights: false,
 
   /**
-   * P&ID schematic.
+   * Process diagrams — both the P&ID schematic and the process flow canvas.
    *
-   * A process engineering drawing of the plant — equipment, valves, pipework
-   * and their states, with controls to add equipment. It represents and
-   * configures plant hardware rather than analysing the readings.
+   * Process engineering drawings of the plant: equipment, valves, pipework and
+   * their states, with controls to add, edit and delete equipment. They
+   * represent and configure plant hardware rather than analysing the readings.
+   *
+   * Both are covered by this one flag. They differ only in degree — the
+   * schematic carries more editing controls — and the two screens showed
+   * roughly ninety hardcoded equipment readings each. Those cannot be derived:
+   * there is no equipment table, and nothing maps a diagram node to a sensor
+   * tag. Hiding one while showing the other left the same drawing visible
+   * under a different name.
    */
   processSchematic: false,
 
@@ -104,6 +111,7 @@ export const ROUTE_FEATURES: Record<string, FeatureName> = {
   '/autonomous-optimization': 'autonomousOptimization',
   '/virtual-twin': 'virtualTwin',
   '/process-flow-schematic': 'processSchematic',
+  '/process-flow': 'processSchematic',
   '/data-pipeline': 'dataPipeline',
   // Role views share a route, so this key carries its query string
   '/dashboard-v2?role=executive': 'executiveView',

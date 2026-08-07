@@ -49,3 +49,9 @@ docs/
 feature-overview.html
 public/presentation.html
 nul
+
+# local verification scripts
+.chk.mjs
+.menu.mjs
+.verify*.mjs
+.pdf*.mjs
