@@ -1,0 +1,110 @@
+"""Stage classification and alarm bands.
+
+A single limit per parameter does not survive contact with a real plant.
+Turbidity of 12.8 NTU is normal at a raw water intake and a serious failure at
+a filter outlet. Under one shared limit the intake alarms continuously until
+operators mute the parameter — and the genuine failure is muted with it.
+
+Limits therefore belong to the sensor, resolved from where it sits in the
+treatment train. Ported from git/aquaflow/src/lib/thresholds.ts; the two must
+not diverge, because the version the dashboard uses would stop being the
+version that raised the alert.
+"""
+from __future__ import annotations
+
+from typing import Literal
+
+Stage = Literal["raw", "treatment", "filtered", "final"]
+Status = Literal["normal", "warning", "critical"]
+
+# Order matters below: a "Clear Water Tank" downstream of filters is final, and
+# a filter is checked before falling through to generic mid-process.
+_FINAL_HINTS = (
+    "clear water", "final", "outlet", "storage", "distribution", "dispatch",
+    "elevated", "contact", "permeate", "booster", "main", "remineral",
+    "ground storage",
+)
+# Anything producing filtered water — its effluent meets finished-water limits.
+_FILTER_HINTS = (
+    "filter", "membrane", "carbon", "ro stage", "ultrafiltration", "softening",
+)
+_RAW_HINTS = (
+    "intake", "raw", "well", "river", "lake", "bore", "screen", "strainer", "sump",
+)
+
+
+def classify_stage(location: str | None) -> Stage:
+    if not location:
+        return "treatment"
+    l = location.lower()
+    if any(h in l for h in _FINAL_HINTS):
+        return "final"
+    if any(h in l for h in _FILTER_HINTS):
+        return "filtered"
+    if any(h in l for h in _RAW_HINTS):
+        return "raw"
+    return "treatment"
+
+
+Band = tuple[float, float, float, float]        # warn_min, warn_max, crit_min, crit_max
+
+# The widest a reading can be and still be physically real. Used when a stage
+# has no override — a pH of 15 is a broken probe anywhere.
+_PLAUSIBLE: dict[str, Band] = {
+    "pH":           (6.5, 8.5, 6.0, 9.0),
+    "flow":         (100, 500, 50, 600),
+    "pressure":     (2.0, 6.0, 1.0, 8.0),
+    "temperature":  (15, 35, 5, 45),
+    "turbidity":    (0, 4.0, 0, 10),
+    "chlorine":     (0.2, 2.0, 0.1, 4.0),
+    "DO":           (4.0, 12.0, 2.0, 15.0),
+    "level":        (20, 95, 10, 98),
+    "conductivity": (200, 800, 100, 1500),
+    "ORP":          (200, 800, 100, 1000),
+}
+
+# Only parameters whose acceptable range genuinely shifts along the treatment
+# train are listed. Everything else keeps its plausibility band.
+_STAGE: dict[tuple[str, str], Band] = {
+    # Untreated surface water is expected to be cloudy.
+    ("turbidity", "raw"):       (0, 20, 0, 50),
+    ("turbidity", "treatment"): (0, 5.0, 0, 10),
+    # Filter effluent — 0.3 NTU is the line most utilities are held to, and it
+    # is the regulatory control point in drinking water.
+    ("turbidity", "filtered"):  (0, 0.3, 0, 0.5),
+    ("turbidity", "final"):     (0, 0.3, 0, 0.5),
+
+    ("pH", "raw"):       (6.0, 9.0, 5.5, 9.5),
+    # Coagulation deliberately depresses pH.
+    ("pH", "treatment"): (6.0, 8.5, 5.5, 9.0),
+    ("pH", "filtered"):  (6.5, 8.5, 6.0, 9.0),
+    ("pH", "final"):     (6.5, 8.5, 6.0, 9.0),
+
+    # Residual is only meaningful after dosing.
+    ("chlorine", "treatment"): (0.2, 3.0, 0.1, 5.0),
+    ("chlorine", "filtered"):  (0.2, 3.0, 0.1, 5.0),
+    ("chlorine", "final"):     (0.2, 2.0, 0.1, 4.0),
+
+    ("conductivity", "raw"): (100, 1200, 50, 2000),
+    ("DO", "raw"):           (2.0, 12.0, 1.0, 15.0),
+}
+
+
+def resolve_band(parameter: str, stage: str) -> Band:
+    """The alarm band for a parameter at a stage.
+
+    These limits are engineering defaults, not MWTS's. They must be confirmed
+    against the client's regulator — CPHEEO/IS 10500, WHO, US SWTR and the EU
+    Drinking Water Directive do not agree, and picking the wrong one is a
+    compliance problem rather than a technical one.
+    """
+    return _STAGE.get((parameter, stage)) or _PLAUSIBLE[parameter]
+
+
+def evaluate(value: float, band: Band) -> Status:
+    warn_min, warn_max, crit_min, crit_max = band
+    if value < crit_min or value > crit_max:
+        return "critical"
+    if value < warn_min or value > warn_max:
+        return "warning"
+    return "normal"

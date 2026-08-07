@@ -55,3 +55,20 @@ nul
 .menu.mjs
 .verify*.mjs
 .pdf*.mjs
+
+# ── backend ─────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Airflow writes these at runtime; they are not source.
+airflow/logs/
+airflow/*.cfg
+airflow/*.db
+airflow/simple_auth_manager_passwords.json.generated
+
+# Raw data files and the gateway rig are deliberately excluded — they are
+# large, regenerable, and belong in their own place rather than in the
+# application repository.

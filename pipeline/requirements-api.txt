@@ -1,0 +1,5 @@
+# Readings API. Pinned to minor versions: a surprise major on a redeploy is
+# not a debugging session anyone wants during a demo.
+fastapi>=0.115,<0.116
+uvicorn[standard]>=0.32,<0.33
+psycopg[binary]>=3.2,<3.3

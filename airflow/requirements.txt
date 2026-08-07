@@ -1,0 +1,2 @@
+# Only what the DAG and ingest.py need. Airflow itself brings the rest.
+psycopg[binary]>=3.2,<3.3
