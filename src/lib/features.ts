@@ -72,6 +72,18 @@ export const FEATURES = {
   processSchematic: false,
 
   /**
+   * Maintenance.
+   *
+   * Service visits, engineer scheduling, spares and work orders. It reports on
+   * the servicing organisation rather than on the plant readings, and there is
+   * no source for any of it — no work-order table, no service history, no
+   * engineer roster. Everything on the screen is fixture data.
+   *
+   * Distinct from Asset Health, which analyses sensor behaviour and stays on.
+   */
+  maintenanceModule: false,
+
+  /**
    * Data pipeline screen.
    *
    * Shows what each incoming file contained and the decision recorded against
@@ -105,6 +117,7 @@ export const ROUTE_FEATURES: Record<string, FeatureName> = {
   '/virtual-twin': 'virtualTwin',
   '/process-flow-schematic': 'processSchematic',
   '/data-pipeline': 'dataPipeline',
+  '/service-monitor': 'maintenanceModule',
   // Role views share a route, so this key carries its query string
   '/dashboard-v2?role=executive': 'executiveView',
   '/insights': 'operationalInsights',
