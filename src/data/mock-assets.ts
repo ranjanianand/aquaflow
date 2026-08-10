@@ -3,25 +3,37 @@ export type AssetType = 'pump' | 'filter' | 'tank' | 'valve' | 'blower' | 'motor
 export type AssetStatus = 'operational' | 'maintenance' | 'fault' | 'offline';
 
 export interface Asset {
+  // Known from the controller: every pump carries a run bit, a fault bit and
+  // an hours-run counter, so these can be assembled from the tags themselves.
   id: string;
   plantId: string;
   plantName: string;
   name: string;
   assetCode: string;
   type: AssetType;
-  manufacturer: string;
-  model: string;
-  serialNumber: string;
-  installationDate: Date;
-  warrantyExpiry: Date;
   status: AssetStatus;
   zone: string;
-  sensorCount: number;
-  lastMaintenance: Date;
-  nextMaintenance: Date;
-  runningHours: number;
-  efficiency: number;
-  criticality: 'high' | 'medium' | 'low';
+  runningHours?: number;
+  running?: boolean | null;
+  note?: string | null;
+
+  // Optional because a PLC does not carry them. Make, model, serial number,
+  // install date and service history live in an asset register or a CMMS —
+  // a different system, and one we have not been given.
+  //
+  // Marked optional rather than removed so the screen keeps its shape: when a
+  // register is imported these populate, and until then they render as absent
+  // instead of as a plausible-looking serial number.
+  manufacturer?: string;
+  model?: string;
+  serialNumber?: string;
+  installationDate?: Date;
+  warrantyExpiry?: Date;
+  sensorCount?: number;
+  lastMaintenance?: Date;
+  nextMaintenance?: Date;
+  efficiency?: number;
+  criticality?: 'high' | 'medium' | 'low';
 }
 
 export const mockAssets: Asset[] = [
@@ -324,20 +336,22 @@ export const getAssetTypeCount = (): Record<AssetType, number> => {
 };
 
 export const getAverageEfficiency = (): number => {
-  const total = mockAssets.reduce((sum, asset) => sum + asset.efficiency, 0);
+  const total = mockAssets.reduce((sum, asset) => sum + (asset.efficiency ?? 0), 0);
   return parseFloat((total / mockAssets.length).toFixed(1));
 };
 
 export const getWarrantyExpiringAssets = (days: number = 90): Asset[] => {
   const now = new Date();
   const futureDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
-  return mockAssets.filter(asset => asset.warrantyExpiry <= futureDate && asset.warrantyExpiry >= now);
+  return mockAssets.filter(asset => asset.warrantyExpiry != null
+    && asset.warrantyExpiry <= futureDate && asset.warrantyExpiry >= now);
 };
 
 export const getMaintenanceDueAssets = (days: number = 30): Asset[] => {
   const now = new Date();
   const futureDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
-  return mockAssets.filter(asset => asset.nextMaintenance <= futureDate);
+  return mockAssets.filter(asset => asset.nextMaintenance != null
+    && asset.nextMaintenance <= futureDate);
 };
 
 export const getAssetTypeLabel = (type: AssetType): string => {

@@ -47,6 +47,14 @@ const PARAMETER_LABEL: Record<SensorType, string> = {
   level: 'Level',
   conductivity: 'Conductivity',
   ORP: 'ORP',
+  energy: 'Energy',
+  power: 'Power',
+  run_status: 'Run Status',
+  fault: 'Fault',
+  run_hours: 'Run Hours',
+  start_count: 'Start Count',
+  valve_open: 'Valve Open',
+  valve_closed: 'Valve Closed',
 };
 
 function describe(sensor: Sensor): {

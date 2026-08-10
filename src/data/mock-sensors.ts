@@ -48,6 +48,16 @@ const sensorConfigs: Record<SensorType, { unit: string; min: number; max: number
   level: { unit: '%', min: 20, max: 95, base: 72, setpoint: 75, variance: 15 },
   conductivity: { unit: 'µS/cm', min: 200, max: 800, base: 450, setpoint: 400, variance: 100 },
   ORP: { unit: 'mV', min: 200, max: 800, base: 650, setpoint: 600, variance: 100 },
+  // Present so the map stays exhaustive. These fixtures generate analogue
+  // readings, and a counter or a bit is neither — the database supplies those.
+  energy: { unit: 'kWh', min: 0, max: 0, base: 0, setpoint: 0, variance: 0 },
+  power: { unit: 'kW', min: 5, max: 200, base: 90, setpoint: 100, variance: 20 },
+  run_status: { unit: '', min: 0, max: 1, base: 1, setpoint: 1, variance: 0 },
+  fault: { unit: '', min: 0, max: 1, base: 0, setpoint: 0, variance: 0 },
+  run_hours: { unit: 'h', min: 0, max: 0, base: 0, setpoint: 0, variance: 0 },
+  start_count: { unit: '', min: 0, max: 0, base: 0, setpoint: 0, variance: 0 },
+  valve_open: { unit: '', min: 0, max: 1, base: 1, setpoint: 1, variance: 0 },
+  valve_closed: { unit: '', min: 0, max: 1, base: 0, setpoint: 0, variance: 0 },
 };
 
 // Get communication status based on lastUpdated
@@ -134,6 +144,8 @@ const generateTag = (type: SensorType, plantId: string, index: number): string =
     level: 'LVL',
     conductivity: 'CON',
     ORP: 'ORP',
+    energy: 'JI', power: 'JI', run_status: 'XS', fault: 'XA',
+    run_hours: 'KQ', start_count: 'KQ', valve_open: 'ZSO', valve_closed: 'ZSC',
   };
   const plantNum = plantId.replace('plant-', '');
   return `${typePrefix[type]}-${plantNum}${String(index + 1).padStart(3, '0')}`;
@@ -152,6 +164,8 @@ const generateSensorsForPlant = (plantId: string): Sensor[] => {
   let typeIndex: Record<SensorType, number> = {
     pH: 0, flow: 0, pressure: 0, temperature: 0, turbidity: 0,
     chlorine: 0, DO: 0, level: 0, conductivity: 0, ORP: 0,
+    energy: 0, power: 0, run_status: 0, fault: 0,
+    run_hours: 0, start_count: 0, valve_open: 0, valve_closed: 0,
   };
 
   for (let i = 0; i < config.count; i++) {

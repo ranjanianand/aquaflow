@@ -92,24 +92,26 @@ def seed(conn, tag_map_path: str) -> None:
 
         cur.executemany("""
             INSERT INTO sensors (sensor_id, plant_code, tag, parameter, unit,
-                                 location, stage)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                 location, stage, data_type)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (sensor_id) DO UPDATE
               SET parameter = EXCLUDED.parameter, unit = EXCLUDED.unit,
-                  location  = EXCLUDED.location,  stage = EXCLUDED.stage
+                  location  = EXCLUDED.location,  stage = EXCLUDED.stage,
+                  data_type = EXCLUDED.data_type
         """, [(e.sensor_id, e.plant_code, e.tag, e.parameter, e.unit,
-               e.location, e.stage) for e in tag_map.values()])
+               e.location, e.stage, e.data_type) for e in tag_map.values()])
 
         # Version 1 of the register map. A corrected span later closes this row
         # (valid_to = now()) and opens a new one, rather than overwriting it.
         cur.executemany("""
             INSERT INTO tag_map (tag, plant_code, sensor_id, span_low, span_high,
-                                 count_low, count_high, valid_from, source)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, '-infinity', %s)
+                                 count_low, count_high, data_type, valid_from, source)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, '-infinity', %s)
             ON CONFLICT (tag, plant_code, valid_from) DO UPDATE
-              SET span_low = EXCLUDED.span_low, span_high = EXCLUDED.span_high
+              SET span_low = EXCLUDED.span_low, span_high = EXCLUDED.span_high,
+                  data_type = EXCLUDED.data_type
         """, [(e.tag, e.plant_code, e.sensor_id, e.span_low, e.span_high,
-               e.count_low, e.count_high,
+               e.count_low, e.count_high, e.data_type,
                'ASSUMED — reversed from prototype, not confirmed with the plant')
               for e in tag_map.values()])
 
@@ -144,8 +146,7 @@ def main() -> int:
     if not dsn:
         print("DATABASE_URL is not set.")
         return 64
-    tag_map_path = sys.argv[1] if len(sys.argv) > 1 else \
-        str(HERE.parent / "Raw_data_PLC" / "register-map" / "tag-map.json")
+    tag_map_path = sys.argv[1] if len(sys.argv) > 1 else find_register_map()
 
     with psycopg.connect(dsn) as conn:
         with conn.cursor() as cur:

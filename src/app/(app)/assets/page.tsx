@@ -21,10 +21,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { usePlants, useKpis } from '@/lib/api/hooks';
-import { useAllSensors } from '@/lib/api/hooks';
+import { usePlants, useKpis, useEquipment } from '@/lib/api/hooks';
 import {
-  mockAssets,
   getOperationalAssetsCount,
   getFaultAssetsCount,
   getMaintenanceAssetsCount,
@@ -36,6 +34,7 @@ import {
   AssetType,
   AssetStatus,
 } from '@/data/mock-assets';
+import { useAllSensors } from '@/lib/api/hooks';
 import { Plant, Sensor, SensorType } from '@/types';
 import {
   Building2,
@@ -155,6 +154,27 @@ const maintenanceSchedule: MaintenanceItem[] = [
 export default function AssetsPage() {
   // Plants, sensors and counts from the database.
   const { data: livePlants } = usePlants();
+  // Equipment comes from the controller's own run, fault and hours tags —
+  // there is no asset register, and the fixture that stood here carried
+  // manufacturer, serial number and warranty dates that were invented.
+  // Those fields are absent rather than guessed.
+  const { data: liveEquipment } = useEquipment();
+  const mockAssets: Asset[] = (liveEquipment ?? []).map((e) => ({
+    id: e.id,
+    plantId: e.plantId,
+    plantName: e.plantName,
+    name: e.name,
+    assetCode: e.id,
+    type: e.kind as AssetType,
+    status: (e.health === 'fault' ? 'fault'
+           : e.health === 'due' ? 'maintenance' : 'operational') as AssetStatus,
+    zone: e.stage,
+    runningHours: e.runHours ?? undefined,
+    running: e.running,
+    note: e.note,
+    // manufacturer, model, serial, install date and service dates are left
+    // undefined on purpose — the controller does not carry them.
+  }));
   const { data: liveSensors } = useAllSensors();
   const { data: kpis } = useKpis();
   const mockSensors = liveSensors ?? [];
@@ -795,8 +815,13 @@ export default function AssetsPage() {
                 </TableHeader>
                 <TableBody>
                   {filteredAssets.map((asset) => {
-                    const daysToMaintenance = differenceInDays(asset.nextMaintenance, new Date());
-                    const isMaintenanceDue = daysToMaintenance <= 14;
+                    // Absent when there is no asset register — the controller
+                    // reports state and hours, not service schedules.
+                    const daysToMaintenance = asset.nextMaintenance
+                      ? differenceInDays(asset.nextMaintenance, new Date())
+                      : null;
+                    const isMaintenanceDue =
+                      daysToMaintenance !== null && daysToMaintenance <= 14;
 
                     return (
                       <TableRow key={asset.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => handleViewAsset(asset)}>
@@ -824,12 +849,16 @@ export default function AssetsPage() {
                           </span>
                         </TableCell>
                         <TableCell>
+                          {/* Efficiency needs a duty point and a measured
+                              output to compare against. Neither is available
+                              from a run bit and an hours counter. */}
                           <span className={cn(
                             'text-sm font-mono font-bold',
+                            asset.efficiency == null ? 'text-slate-300' :
                             asset.efficiency >= 95 ? 'text-emerald-600' :
                             asset.efficiency >= 85 ? 'text-amber-600' : 'text-rose-600'
                           )}>
-                            {asset.efficiency}%
+                            {asset.efficiency == null ? '—' : `${asset.efficiency}%`}
                           </span>
                         </TableCell>
                         <TableCell>
@@ -837,7 +866,9 @@ export default function AssetsPage() {
                             'text-sm font-mono',
                             isMaintenanceDue ? 'text-amber-600 font-bold' : 'text-slate-500'
                           )}>
-                            {format(asset.nextMaintenance, 'MMM d')}
+                            {asset.nextMaintenance
+                              ? format(asset.nextMaintenance, 'MMM d')
+                              : <span className="text-slate-300">—</span>}
                             {isMaintenanceDue && <span className="text-[10px] ml-1">({daysToMaintenance}d)</span>}
                           </div>
                         </TableCell>
@@ -1436,15 +1467,15 @@ export default function AssetsPage() {
                 </div>
                 <div className="space-y-1">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Manufacturer</span>
-                  <p className="text-sm text-slate-600">{selectedAsset.manufacturer}</p>
+                  <p className="text-sm text-slate-600">{selectedAsset.manufacturer ?? '—'}</p>
                 </div>
                 <div className="space-y-1">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Model</span>
-                  <p className="text-sm font-mono text-slate-600">{selectedAsset.model}</p>
+                  <p className="text-sm font-mono text-slate-600">{selectedAsset.model ?? '—'}</p>
                 </div>
                 <div className="space-y-1">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Serial Number</span>
-                  <p className="text-sm font-mono text-slate-600">{selectedAsset.serialNumber}</p>
+                  <p className="text-sm font-mono text-slate-600">{selectedAsset.serialNumber ?? '—'}</p>
                 </div>
                 <div className="space-y-1">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Zone</span>
@@ -1452,24 +1483,25 @@ export default function AssetsPage() {
                 </div>
                 <div className="space-y-1">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Installation Date</span>
-                  <p className="text-sm font-mono text-slate-600">{format(selectedAsset.installationDate, 'MMM d, yyyy')}</p>
+                  <p className="text-sm font-mono text-slate-600">{selectedAsset.installationDate ? format(selectedAsset.installationDate, 'MMM d, yyyy') : '—'}</p>
                 </div>
                 <div className="space-y-1">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Warranty Expiry</span>
-                  <p className="text-sm font-mono text-slate-600">{format(selectedAsset.warrantyExpiry, 'MMM d, yyyy')}</p>
+                  <p className="text-sm font-mono text-slate-600">{selectedAsset.warrantyExpiry ? format(selectedAsset.warrantyExpiry, 'MMM d, yyyy') : '—'}</p>
                 </div>
                 <div className="space-y-1">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Running Hours</span>
-                  <p className="text-sm font-mono text-slate-800">{selectedAsset.runningHours.toLocaleString()} hrs</p>
+                  <p className="text-sm font-mono text-slate-800">{selectedAsset.runningHours?.toLocaleString() ?? '—'} hrs</p>
                 </div>
                 <div className="space-y-1">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Efficiency</span>
                   <p className={cn(
                     'text-sm font-mono font-bold',
+                    selectedAsset.efficiency == null ? 'text-slate-300' :
                     selectedAsset.efficiency >= 95 ? 'text-emerald-600' :
                     selectedAsset.efficiency >= 85 ? 'text-amber-600' : 'text-rose-600'
                   )}>
-                    {selectedAsset.efficiency}%
+                    {selectedAsset.efficiency != null ? `${selectedAsset.efficiency}%` : '—'}
                   </p>
                 </div>
               </div>
@@ -1479,11 +1511,11 @@ export default function AssetsPage() {
                 <div className="grid grid-cols-2 gap-4 p-3 bg-slate-50 border border-slate-200">
                   <div className="space-y-1">
                     <span className="text-[10px] text-slate-500">Last Maintenance</span>
-                    <p className="text-sm font-mono text-slate-700">{format(selectedAsset.lastMaintenance, 'MMM d, yyyy')}</p>
+                    <p className="text-sm font-mono text-slate-700">{selectedAsset.lastMaintenance ? format(selectedAsset.lastMaintenance, 'MMM d, yyyy') : '—'}</p>
                   </div>
                   <div className="space-y-1">
                     <span className="text-[10px] text-slate-500">Next Maintenance</span>
-                    <p className="text-sm font-mono text-amber-600 font-bold">{format(selectedAsset.nextMaintenance, 'MMM d, yyyy')}</p>
+                    <p className="text-sm font-mono text-amber-600 font-bold">{selectedAsset.nextMaintenance ? format(selectedAsset.nextMaintenance, 'MMM d, yyyy') : '—'}</p>
                   </div>
                 </div>
               </div>

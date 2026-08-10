@@ -61,7 +61,20 @@ _PLAUSIBLE: dict[str, Band] = {
     "level":        (20, 95, 10, 98),
     "conductivity": (200, 800, 100, 1500),
     "ORP":          (200, 800, 100, 1000),
+    # Instantaneous load at a motor control centre. A band is meaningful here:
+    # drawing far more than usual means a pump is struggling, and far less
+    # means it has stopped. Widths are per-MCC and would be set from the
+    # installed load — these are placeholders.
+    "power":        (5, 200, 0, 250),
 }
+
+# Parameters that are states or totals rather than measurements. They reach
+# resolve_band only through a coding error, so it fails loudly rather than
+# inventing a limit for a pump-run bit.
+_NOT_MEASURED = frozenset({
+    "run_status", "fault", "valve_open", "valve_closed",
+    "energy", "run_hours", "start_count",
+})
 
 # Only parameters whose acceptable range genuinely shifts along the treatment
 # train are listed. Everything else keeps its plausibility band.
@@ -98,6 +111,10 @@ def resolve_band(parameter: str, stage: str) -> Band:
     Drinking Water Directive do not agree, and picking the wrong one is a
     compliance problem rather than a technical one.
     """
+    if parameter in _NOT_MEASURED:
+        raise ValueError(
+            f"{parameter} is a state or a total, not a measurement — it has no "
+            "alarm band. Check data_type on this tag.")
     return _STAGE.get((parameter, stage)) or _PLAUSIBLE[parameter]
 
 

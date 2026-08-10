@@ -79,6 +79,16 @@ export const FEATURES = {
   processSchematic: false,
 
   /**
+   * Alarm orchestration — the "Smart" tab on the Alarms screen.
+   *
+   * Correlation groups, first-out analysis, suppression rules and fatigue
+   * metrics. These are genuinely useful, and none of them exist: there is no
+   * correlation engine and no suppression rules, so the tab reported findings
+   * from a fixture. The rest of the Alarms screen is live.
+   */
+  alarmOrchestration: false,
+
+  /**
    * Maintenance.
    *
    * Service visits, engineer scheduling, spares and work orders. It reports on

@@ -70,6 +70,20 @@ const PLAUSIBLE: Record<SensorType, ThresholdBand> = {
   level:        { warnMin: 20,   warnMax: 95,   critMin: 10,   critMax: 98 },
   conductivity: { warnMin: 200,  warnMax: 800,  critMin: 100,  critMax: 1500 },
   ORP:          { warnMin: 200,  warnMax: 800,  critMin: 100,  critMax: 1000 },
+  // Instantaneous load at a motor control centre. Drawing far more than usual
+  // means a pump is struggling; far less means it has stopped.
+  power:        { warnMin: 5,    warnMax: 200,  critMin: 0,    critMax: 250 },
+  // States and totals, not measurements. The bands below are placeholders so
+  // the map stays exhaustive — nothing should evaluate them, because a
+  // pump-run bit has no limit and a kWh total is never "too high". The Python
+  // side raises rather than returning a band for these.
+  energy:       { warnMin: 0, warnMax: 0, critMin: 0, critMax: 0 },
+  run_status:   { warnMin: 0, warnMax: 1, critMin: 0, critMax: 1 },
+  fault:        { warnMin: 0, warnMax: 0, critMin: 0, critMax: 1 },
+  run_hours:    { warnMin: 0, warnMax: 0, critMin: 0, critMax: 0 },
+  start_count:  { warnMin: 0, warnMax: 0, critMin: 0, critMax: 0 },
+  valve_open:   { warnMin: 0, warnMax: 1, critMin: 0, critMax: 1 },
+  valve_closed: { warnMin: 0, warnMax: 1, critMin: 0, critMax: 1 },
 };
 
 /**

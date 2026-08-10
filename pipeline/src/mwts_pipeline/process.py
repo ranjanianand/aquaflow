@@ -104,10 +104,33 @@ def process_envelope(
             reject(r, "sentinel", entry)
             continue
 
-        # 4 ── Convert. Sparkplug B and OPC UA supply their own span, which
-        #      takes precedence over the register map — it came with the data.
-        if r.span is not None:
-            value = r.raw                                    # already scaled
+        # 4 ── Convert, according to what kind of tag this is.
+        #
+        #      Only an analogue input is scaled. A digital is a state and a
+        #      counter is a total; putting either through the span calculation
+        #      produces a number that looks like a reading and is not one.
+        if entry.data_type == "digital":
+            # 0 or 1. Anything else means the register does not hold what the
+            # map says it holds — a mis-mapped address, most likely.
+            if r.raw not in (0.0, 1.0):
+                reject(r, "out_of_span", entry)
+                continue
+            value = r.raw
+        elif entry.data_type == "counter":
+            # Stored as the raw lifetime total. Consumption is the difference
+            # between two readings, derived at query time — see the
+            # counter_deltas view. Storing the total rather than the delta
+            # means a missed poll costs nothing: the next difference spans the
+            # gap and is still correct.
+            #
+            # A counter must never decrease. When it does, the meter has
+            # rolled over or been replaced, and that is a fact about the
+            # instrument rather than a bad reading, so it is kept.
+            value = r.raw
+        elif r.span is not None:
+            # Sparkplug B and OPC UA supply their own span, which takes
+            # precedence over the register map — it came with the data.
+            value = r.raw
         elif sends_scaled is True:
             value = r.raw
         elif sends_scaled is None and not looks_like_counts(r.raw, entry):
@@ -118,14 +141,31 @@ def process_envelope(
         # 5 ── Plausibility against the INSTRUMENT span, not the alarm limit.
         #      Outside the span is a scaling error, not a process excursion —
         #      and if every reading fails this, the count range is wrong.
-        span_lo, span_hi = (r.span or (entry.span_low, entry.span_high))
-        margin = (span_hi - span_lo) * 0.02                  # ADC noise at the rails
-        if not (span_lo - margin <= value <= span_hi + margin):
-            reject(r, "out_of_span", entry)
-            continue
+        #
+        #      Skipped for digital and counter: a bit has no span, and a
+        #      lifetime total exceeds any span by design.
+        if entry.data_type == "analog":
+            span_lo, span_hi = (r.span or (entry.span_low, entry.span_high))
+            margin = (span_hi - span_lo) * 0.02              # ADC noise at the rails
+            if not (span_lo - margin <= value <= span_hi + margin):
+                reject(r, "out_of_span", entry)
+                continue
 
-        # 6 ── Status from the sensor's stage. Never a single global limit.
-        status = evaluate(value, resolve_band(entry.parameter, entry.stage))
+        # 6 ── Status.
+        #
+        #      Alarm bands describe a measurement, so they apply to analogue
+        #      tags only. A digital carries its meaning in the tag itself — a
+        #      fault bit set is a fault — and a counter has no band at all: a
+        #      kWh total is never "too high".
+        if entry.data_type == "analog":
+            status = evaluate(value, resolve_band(entry.parameter, entry.stage))
+        elif entry.data_type == "digital":
+            # Alarm-class tags follow ISA-5.1: XA is an alarm, and a set bit
+            # on one is the fault it names. Every other digital is a state.
+            is_alarm_tag = entry.tag.split("-")[0].upper() in ("XA", "UA", "YA")
+            status = "critical" if (is_alarm_tag and value == 1.0) else "normal"
+        else:
+            status = "normal"
 
         rows.append(Reading(
             sensor_id=entry.sensor_id,

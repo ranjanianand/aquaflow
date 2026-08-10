@@ -192,8 +192,11 @@ export interface AlertTrendDay {
   sensors: number;
 }
 
-export async function fetchAlertTrend(days = 7, signal?: AbortSignal): Promise<AlertTrendDay[]> {
-  return get<AlertTrendDay[]>(`/alerts/trend?days=${days}`, signal);
+export async function fetchAlertTrend(
+  days = 7, plant?: string, signal?: AbortSignal,
+): Promise<AlertTrendDay[]> {
+  const scope = plant ? `&plant=${encodeURIComponent(plant)}` : '';
+  return get<AlertTrendDay[]>(`/alerts/trend?days=${days}${scope}`, signal);
 }
 
 export interface AlertHour {
@@ -233,4 +236,99 @@ export interface Compliance {
 
 export async function fetchCompliance(hours = 24, signal?: AbortSignal): Promise<Compliance> {
   return get<Compliance>(`/kpis/quality?hours=${hours}`, signal);
+}
+
+export interface LiveGateway {
+  id: string;
+  plantId: string;
+  plantName: string;
+  model: string;
+  countRange: [number, number];
+  qualityFamily: string;
+  sendsScaled: boolean;
+  filesReceived: number;
+  lastFile: string | null;
+  status: 'online' | 'stale' | 'offline';
+  lastSeq: number | null;
+  /** Files the gateway produced that never arrived. A gap here is the one
+   *  delivery failure that leaves no error anywhere. */
+  seqGaps: number;
+}
+
+export async function fetchGateways(signal?: AbortSignal): Promise<LiveGateway[]> {
+  return get<LiveGateway[]>('/gateways', signal);
+}
+
+export interface EnergyMeter {
+  id: string; tag: string; location: string;
+  plantId: string; plantName: string;
+  /** Consumption over the window, from counter differences — not the total. */
+  kwh: number | null;
+  lifetimeKwh: number;
+  currentKw: number | null;
+  readings: number;
+}
+
+export async function fetchEnergy(hours = 24, signal?: AbortSignal) {
+  return get<{ meters: EnergyMeter[]; totalKwh: number | null; hours: number }>(
+    `/energy?hours=${hours}`, signal);
+}
+
+export interface Equipment {
+  id: string; name: string; plantId: string; plantName: string;
+  stage: string; kind: 'pump' | 'blower' | 'valve';
+  running: boolean | null; fault: boolean | null;
+  runHours: number | null; startCount: number | null;
+  valveOpen: boolean | null; valveClosed: boolean | null;
+  lastSeen: string | null;
+  health: 'ok' | 'due' | 'fault';
+  note: string | null;
+}
+
+export async function fetchEquipment(signal?: AbortSignal) {
+  return get<Equipment[]>('/equipment', signal);
+}
+
+export interface AuditEntry {
+  id: string; action: string;
+  startedAt: string | null; finishedAt: string | null;
+  durationSeconds: number | null;
+  filesSeen: number; filesSkipped: number;
+  readingsIn: number; readingsOut: number; dropped: number;
+  reconciled: boolean | null;
+  error: string | null;
+  rejections: Record<string, number>;
+  outcome: 'ok' | 'no-op' | 'failed' | 'error';
+}
+
+export async function fetchAudit(limit = 100, signal?: AbortSignal) {
+  return get<AuditEntry[]>(`/audit?limit=${limit}`, signal);
+}
+
+export interface AppUser {
+  id: string; email: string; name: string;
+  role: 'admin' | 'manager' | 'operator' | 'viewer';
+  status: 'active' | 'inactive';
+  /** Empty means every plant — a fleet role rather than a site one. */
+  plants: string[];
+  lastLogin: string | null;
+  createdAt: string;
+  /** False until real authentication lands. An account nobody can sign into
+   *  is worth showing as exactly that. */
+  canSignIn: boolean;
+}
+
+export async function fetchUsers(signal?: AbortSignal) {
+  return get<AppUser[]>('/users', signal);
+}
+
+export interface KbArticle {
+  id: string; title: string; category: string; tags: string[];
+  plantCode: string | null; author: string | null;
+  updatedAt: string; excerpt: string;
+}
+
+export async function fetchKnowledge(search?: string, signal?: AbortSignal) {
+  const qs = search ? `?q=${encodeURIComponent(search)}` : '';
+  return get<KbArticle[]>(`/knowledge${qs}`, signal);
 }

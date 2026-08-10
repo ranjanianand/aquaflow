@@ -237,3 +237,75 @@ def test_unknown_format_raises_rather_than_guessing():
     from mwts_pipeline.adapters import UnknownFormat
     with pytest.raises(UnknownFormat):
         adapt({"something": "entirely different"})
+
+
+# ── data types: not every tag is a 4-20 mA measurement ────────────────────
+
+PUMP_RUN = TagMapEntry(
+    tag="XS-P101", plant_code="WTP-01", sensor_id="s-run", parameter="level",
+    unit="", location="Transfer Pump 1", stage="treatment",
+    span_low=0, span_high=1, count_low=0, count_high=1, data_type="digital")
+
+PUMP_FAULT = TagMapEntry(
+    tag="XA-P101", plant_code="WTP-01", sensor_id="s-fault", parameter="level",
+    unit="", location="Transfer Pump 1", stage="treatment",
+    span_low=0, span_high=1, count_low=0, count_high=1, data_type="digital")
+
+KWH = TagMapEntry(
+    tag="JI-6001", plant_code="WTP-01", sensor_id="s-kwh", parameter="level",
+    unit="kWh", location="MCC 1", stage="treatment",
+    span_low=0, span_high=0, count_low=0, count_high=0, data_type="counter")
+
+TYPED = {e.tag: e for e in (PUMP_RUN, PUMP_FAULT, KWH, FILTER_TURB)}
+
+
+def test_digital_is_not_scaled():
+    """A pump-run bit put through the analogue conversion becomes a plausible
+    engineering value, which is the worst kind of wrong."""
+    rows, _, _ = process_envelope(
+        env(RawReading("XS-P101", 1.0, TS, quality=192)), TYPED, source_file="f")
+    assert rows[0].value == 1.0
+    assert rows[0].status == "normal"          # running is a state, not a fault
+
+
+def test_alarm_bit_set_is_critical():
+    rows, _, _ = process_envelope(
+        env(RawReading("XA-P101", 1.0, TS, quality=192)), TYPED, source_file="f")
+    assert rows[0].status == "critical"
+
+
+def test_alarm_bit_clear_is_normal():
+    rows, _, _ = process_envelope(
+        env(RawReading("XA-P101", 0.0, TS, quality=192)), TYPED, source_file="f")
+    assert rows[0].status == "normal"
+
+
+def test_digital_rejects_anything_but_zero_or_one():
+    """A digital reading 7609 means the register does not hold what the map
+    says — a mis-mapped address, not a process event."""
+    rows, rej, counts = process_envelope(
+        env(RawReading("XS-P101", 7609, TS, quality=192)), TYPED, source_file="f")
+    assert rows == []
+    assert counts["out_of_span"] == 1
+
+
+def test_counter_is_stored_raw_and_not_span_checked():
+    """A lifetime kWh total exceeds any instrument span by design. Scaling it,
+    or rejecting it as out of range, both destroy it."""
+    rows, _, _ = process_envelope(
+        env(RawReading("JI-6001", 4_821_973, TS, quality=192)), TYPED, source_file="f")
+    assert rows[0].value == 4_821_973
+    assert rows[0].status == "normal"          # a total is never "too high"
+
+
+def test_analog_still_scales_alongside_the_others():
+    """The three types travel in one payload, as they do from a real gateway."""
+    rows, _, _ = process_envelope(
+        env(RawReading("XS-P101", 1.0, TS, quality=192),
+            RawReading("JI-6001", 4_821_973, TS, quality=192),
+            RawReading("TUR-1003", 6216, TS, quality=192)),
+        TYPED, source_file="f")
+    by_id = {r.sensor_id: r.value for r in rows}
+    assert by_id["s-run"] == 1.0                       # untouched
+    assert by_id["s-kwh"] == 4_821_973                 # untouched
+    assert by_id["s-10"] == pytest.approx(0.31, abs=0.01)   # scaled

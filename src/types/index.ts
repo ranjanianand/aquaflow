@@ -12,7 +12,17 @@ export type SensorType =
   | 'DO'
   | 'level'
   | 'conductivity'
-  | 'ORP';
+  | 'ORP'
+  // Beyond water quality. A PLC carries equipment state and energy on the
+  // same wire as the analysers; these are not a separate integration.
+  | 'energy'         // kWh totaliser — a counter, not a measurement
+  | 'power'          // instantaneous kW
+  | 'run_status'     // pump or blower running
+  | 'fault'          // equipment alarm bit
+  | 'run_hours'      // motor hours run, drives service intervals
+  | 'start_count'
+  | 'valve_open'
+  | 'valve_closed';
 
 export type SensorStatus = 'normal' | 'warning' | 'critical';
 

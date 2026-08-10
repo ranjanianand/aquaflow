@@ -59,6 +59,15 @@ class TagMapEntry:
     span_high: float
     count_low: int = 5530
     count_high: int = 27648
+    # analog  4-20 mA, scaled from counts
+    # digital a bit — pump running, valve open, fault present
+    # counter a lifetime total: kWh, run hours, start counts
+    #
+    # Defaults to analog so an existing register map without the column keeps
+    # working, but a real one should state it for every tag. Getting it wrong
+    # is silent: a pump-run bit scaled as analogue becomes a plausible-looking
+    # engineering value.
+    data_type: str = "analog"
 
 
 @dataclass(frozen=True, slots=True)

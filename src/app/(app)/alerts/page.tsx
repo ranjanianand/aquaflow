@@ -6,6 +6,7 @@ import { AlertModal } from '@/components/alerts/alert-modal';
 import { CreateRuleModal } from '@/components/alerts/create-rule-modal';
 import { Alert, AlertStatus, AlertRule } from '@/types';
 import { usePlants, useAlertsAsAppAlerts, useAlertTrend } from '@/lib/api/hooks';
+import { FEATURES } from '@/lib/features';
 import {
   getCorrelatedAlertGroups,
   getFatigueMetrics,
@@ -93,8 +94,14 @@ export default function AlertsPage() {
 
   const { data: plants } = usePlants();
   const { data: liveAlerts } = useAlertsAsAppAlerts();
-  const { data: trendDays } = useAlertTrend(7);
-  const mockAlerts = liveAlerts;
+  const { data: trendDays } = useAlertTrend(7, plantFilter === 'all' ? undefined : plantFilter);
+  // Scoped by plant BEFORE anything is derived from it. The plant selector
+  // previously fed only the table, so choosing a plant changed the rows while
+  // the counts, the donut and the trend above them stayed fleet-wide — two
+  // sets of numbers on one screen describing different things.
+  const mockAlerts = plantFilter === 'all'
+    ? liveAlerts
+    : liveAlerts.filter((a) => a.plantId === plantFilter);
 
   // Derived from the live set rather than a fixture helper.
   //
@@ -147,7 +154,7 @@ export default function AlertsPage() {
       plantCounts[alert.plantId][alert.severity]++;
     });
     return Object.values(plantCounts);
-  }, []);
+  }, [mockAlerts]);
 
   // Real breach counts per day, from the hourly rollup. This was
   // Math.random() — a chart that drew a different history on every render.
@@ -172,7 +179,7 @@ export default function AlertsPage() {
     return Object.entries(typeCounts)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
-  }, []);
+  }, [mockAlerts]);
 
   const filteredAlerts = useMemo(() => {
     let alerts = selectedTab === 'all' || selectedTab === 'overview'
@@ -193,12 +200,11 @@ export default function AlertsPage() {
       alerts = alerts.filter((a) => a.severity === severityFilter);
     }
 
-    if (plantFilter !== 'all') {
-      alerts = alerts.filter((a) => a.plantId === plantFilter);
-    }
-
     return alerts;
-  }, [selectedTab, searchQuery, severityFilter, plantFilter]);
+    // mockAlerts belongs in the dependency list: it arrives asynchronously, and
+    // without it the memo keeps its first result — an empty table that never
+    // fills, however many alerts load.
+  }, [mockAlerts, selectedTab, searchQuery, severityFilter]);
 
   const handleViewAlert = (alert: Alert) => {
     setSelectedAlert(alert);
@@ -351,7 +357,8 @@ export default function AlertsPage() {
           <div className="px-4 py-3 border-b border-slate-200 flex flex-col sm:flex-row gap-3">
             {/* Tab Buttons */}
             <div className="flex gap-1">
-              {(['overview', 'smart', 'active', 'acknowledged', 'resolved', 'all'] as TabValue[]).map((tab) => {
+              {(['overview', ...(FEATURES.alarmOrchestration ? ['smart' as const] : []),
+                 'active', 'acknowledged', 'resolved', 'all'] as TabValue[]).map((tab) => {
                 const count = tab === 'all' ? stats.total : tab === 'overview' || tab === 'smart' ? null : stats[tab as keyof typeof stats];
                 return (
                   <button

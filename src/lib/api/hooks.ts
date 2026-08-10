@@ -13,10 +13,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Alert, Plant } from '@/types';
 import {
   fetchAlertTrend, fetchAlerts, fetchAlertsHourly, fetchAllSensors, fetchHistory,
-  fetchCompliance, fetchKpis, fetchLiveKpis,
+  fetchAudit, fetchCompliance, fetchEnergy, fetchEquipment,
+  fetchGateways, fetchKnowledge, fetchKpis, fetchLiveKpis, fetchUsers,
   fetchPlants, fetchSensors,
   type AlertHour, type AlertTrendDay, type Compliance, type Kpis, type LiveAlert,
   type LiveParam,
+  type AppUser, type AuditEntry, type EnergyMeter, type Equipment,
+  type KbArticle,
+  type LiveGateway,
   type LiveSensor,
   type TrendPoint,
 } from './client';
@@ -144,8 +148,9 @@ export function useAlertsAsAppAlerts(pollMs = 60_000) {
 
 /** Breaches per day, counted from the hourly rollup. Replaces a chart built
  *  from Math.random() — which redrew differently on every render. */
-export function useAlertTrend(days = 7) {
-  return useResource<AlertTrendDay[]>((s) => fetchAlertTrend(days, s), [days]);
+export function useAlertTrend(days = 7, plant?: string) {
+  return useResource<AlertTrendDay[]>(
+    (s) => fetchAlertTrend(days, plant, s), [days, plant]);
 }
 
 /** Every sensor across every plant. Fleet views only — no history is fetched. */
@@ -166,4 +171,35 @@ export function useLiveKpis(pollMs = 60_000) {
 /** Share of readings within limits over the recent window. */
 export function useCompliance(hours = 24) {
   return useResource<Compliance>((s) => fetchCompliance(hours, s), [hours]);
+}
+
+/** Gateways, with delivery status derived from files actually received. */
+export function useGateways(pollMs = 60_000) {
+  return useResource<LiveGateway[]>((s) => fetchGateways(s), [], pollMs);
+}
+
+/** Consumption per motor control centre, from counter differences. */
+export function useEnergy(hours = 24) {
+  return useResource<{ meters: EnergyMeter[]; totalKwh: number | null; hours: number }>(
+    (s) => fetchEnergy(hours, s), [hours]);
+}
+
+/** Pumps, blowers and valves, assembled from their run/fault/hours tags. */
+export function useEquipment(pollMs = 60_000) {
+  return useResource<Equipment[]>((s) => fetchEquipment(s), [], pollMs);
+}
+
+/** What the ingest did — the only audit trail this system can honestly keep. */
+export function useAudit(limit = 100) {
+  return useResource<AuditEntry[]>((s) => fetchAudit(limit, s), [limit]);
+}
+
+/** Accounts on this system. Ours to manage, not the client's to supply. */
+export function useUsers() {
+  return useResource<AppUser[]>((s) => fetchUsers(s), []);
+}
+
+/** Procedures and troubleshooting notes. */
+export function useKnowledge(search?: string) {
+  return useResource<KbArticle[]>((s) => fetchKnowledge(search, s), [search]);
 }

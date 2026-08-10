@@ -44,6 +44,15 @@ const sensorTypeLabels: Record<SensorType, string> = {
   level: 'Level',
   conductivity: 'Conductivity',
   ORP: 'ORP',
+  // Equipment and energy, which arrive from the same gateway as the analysers.
+  energy: 'Energy',
+  power: 'Power',
+  run_status: 'Running',
+  fault: 'Fault',
+  run_hours: 'Run Hours',
+  start_count: 'Starts',
+  valve_open: 'Valve Open',
+  valve_closed: 'Valve Closed',
 };
 
 function SensorCard({ sensor }: { sensor: Sensor }) {

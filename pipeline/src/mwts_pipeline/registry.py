@@ -36,6 +36,7 @@ def _entry(d: dict) -> TagMapEntry:
         span_high=float(d["span_high"]),
         count_low=int(d.get("count_low", 5530)),
         count_high=int(d.get("count_high", 27648)),
+        data_type=(d.get("data_type") or "analog").strip().lower(),
     )
 
 
@@ -66,10 +67,15 @@ def load(path: str | Path) -> dict[str, TagMapEntry]:
             problems.append(f"{d.get('tag', '?')}: {exc}")
             continue
 
-        if e.span_high <= e.span_low:
-            problems.append(f"{e.tag}: span {e.span_low}-{e.span_high} is not increasing")
-        if e.count_high <= e.count_low:
-            problems.append(f"{e.tag}: counts {e.count_low}-{e.count_high} not increasing")
+        if e.data_type not in ("analog", "digital", "counter"):
+            problems.append(f"{e.tag}: unknown data_type {e.data_type!r}")
+        # Span and count range only mean something for an analogue input. A
+        # digital has no span, and a counter is not scaled at all.
+        if e.data_type == "analog":
+            if e.span_high <= e.span_low:
+                problems.append(f"{e.tag}: span {e.span_low}-{e.span_high} is not increasing")
+            if e.count_high <= e.count_low:
+                problems.append(f"{e.tag}: counts {e.count_low}-{e.count_high} not increasing")
         if e.tag in out:
             problems.append(f"{e.tag}: duplicate tag")
         out[e.tag] = e

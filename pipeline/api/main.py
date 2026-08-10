@@ -72,11 +72,20 @@ SENSOR_TYPE = {
     "temperature": "temperature", "turbidity": "turbidity",
     "chlorine": "chlorine", "DO": "DO", "level": "level",
     "conductivity": "conductivity", "ORP": "ORP",
+    # Beyond water quality. These arrive from the same gateway in the same
+    # payload — they were simply never in the register map before.
+    "energy": "energy", "power": "power",
+    "run_status": "run_status", "fault": "fault",
+    "run_hours": "run_hours", "start_count": "start_count",
+    "valve_open": "valve_open", "valve_closed": "valve_closed",
 }
 
 # Which readings matter most when several alarm at once. Turbidity and chlorine
 # are the regulatory control points on treated water; a level sensor is not.
 PRIORITY = {
+    # A fault bit outranks any measurement: a stopped pump is not a reading
+    # drifting toward a limit, it is equipment that has failed.
+    "fault": "critical",
     "turbidity": "critical", "chlorine": "critical", "pH": "high",
     "conductivity": "high", "flow": "medium", "pressure": "medium",
     "DO": "medium", "ORP": "medium", "temperature": "low", "level": "low",
@@ -427,7 +436,8 @@ def alerts(limit: int = Query(50, ge=1, le=500)) -> list[dict]:
 
 
 @app.get("/alerts/trend")
-def alerts_trend(days: int = Query(7, ge=1, le=90)) -> list[dict]:
+def alerts_trend(days: int = Query(7, ge=1, le=90),
+                 plant: str | None = Query(None)) -> list[dict]:
     """Breaches per day, from the hourly rollup.
 
     Real counts, not a shape. The continuous aggregate already stores
@@ -442,16 +452,21 @@ def alerts_trend(days: int = Query(7, ge=1, le=90)) -> list[dict]:
     if newest is None:
         return []
     since = newest - timedelta(days=days)
+    # Optional plant scope. Without it a filtered screen shows a fleet-wide
+    # trend beside plant-specific counts — two numbers on one page that
+    # describe different things.
+    code = plant_code(plant) if plant else None
     rows = q("""
-        SELECT date_trunc('day', bucket)      AS day,
-               sum(n_critical)::int           AS critical,
-               sum(n_warning)::int            AS warning,
-               count(DISTINCT sensor_id)::int AS sensors
-        FROM readings_hourly
-        WHERE bucket >= %s
-        GROUP BY date_trunc('day', bucket)
+        SELECT date_trunc('day', h.bucket)      AS day,
+               sum(h.n_critical)::int           AS critical,
+               sum(h.n_warning)::int            AS warning,
+               count(DISTINCT h.sensor_id)::int AS sensors
+        FROM readings_hourly h
+        JOIN sensors s USING (sensor_id)
+        WHERE h.bucket >= %s AND (%s::text IS NULL OR s.plant_code = %s)
+        GROUP BY date_trunc('day', h.bucket)
         ORDER BY day
-    """, (since,))
+    """, (since, code, code))
     return [{
         "date": r["day"].date().isoformat(),
         "critical": r["critical"] or 0,
@@ -491,6 +506,297 @@ def alerts_hourly(hours: int = Query(24, ge=1, le=168)) -> list[dict]:
         "low": 0,
         "total": (r["critical"] or 0) + (r["warning"] or 0),
     } for r in rows]
+
+
+@app.get("/gateways")
+def gateways() -> list[dict]:
+    """The gateways, with whether each is actually delivering.
+
+    `lastFile` and `lastSeq` come from processed_files, so "online" here means
+    a file has arrived recently — not that a TCP session is open. With file
+    delivery there is no session to be up or down; the only honest signal is
+    whether data appeared.
+
+    seqGaps counts missing sequence numbers. A gateway increments seq on every
+    poll, so a gap means a file was produced and never arrived — the one
+    failure that leaves no error anywhere.
+    """
+    rows = q("""
+        SELECT g.gateway_id, g.plant_code, g.model, g.count_low, g.count_high,
+               g.quality_family, g.sends_scaled, p.name AS plant_name,
+               p.poll_seconds,
+               count(f.object_key)              AS files,
+               max(f.processed_at)              AS last_file,
+               max(f.seq)                       AS last_seq,
+               min(f.seq)                       AS first_seq
+        FROM gateways g
+        JOIN plants p USING (plant_code)
+        LEFT JOIN processed_files f ON f.gateway_id = g.gateway_id
+        GROUP BY g.gateway_id, g.plant_code, g.model, g.count_low, g.count_high,
+                 g.quality_family, g.sends_scaled, p.name, p.poll_seconds
+        ORDER BY g.gateway_id
+    """)
+    now = datetime.now(timezone.utc)
+    out = []
+    for r in rows:
+        last = r["last_file"]
+        age = int((now - last).total_seconds()) if last else None
+        expected = (r["last_seq"] - r["first_seq"] + 1) if r["last_seq"] else 0
+        out.append({
+            "id": r["gateway_id"],
+            "plantId": plant_id(r["plant_code"]),
+            "plantName": r["plant_name"],
+            "model": r["model"],
+            "countRange": [r["count_low"], r["count_high"]],
+            "qualityFamily": r["quality_family"],
+            "sendsScaled": r["sends_scaled"],
+            "filesReceived": r["files"],
+            "lastFile": last.isoformat() if last else None,
+            "status": comm_status(age, r["poll_seconds"]),
+            "lastSeq": r["last_seq"],
+            # Files produced by the gateway that never reached us.
+            "seqGaps": max(0, expected - r["files"]) if r["files"] else 0,
+        })
+    return out
+
+
+@app.get("/users")
+def users() -> list[dict]:
+    """Accounts on this system.
+
+    Ours, not the client's — nobody sends a users table. It is seeded with the
+    one account that exists and grows as administrators add people.
+
+    password_hash is never returned. It is not shown, not exported, and not
+    available to the browser even for the account making the request.
+    """
+    rows = q("""
+        SELECT user_id, email, name, role, status, plant_codes,
+               last_login, created_at,
+               (password_hash IS NOT NULL) AS can_sign_in
+        FROM app_users ORDER BY name
+    """)
+    return [{
+        "id": str(r["user_id"]),
+        "email": r["email"],
+        "name": r["name"],
+        "role": r["role"],
+        "status": r["status"],
+        # Empty means every plant — a fleet role rather than a site one.
+        "plants": r["plant_codes"] or [],
+        "lastLogin": r["last_login"].isoformat() if r["last_login"] else None,
+        "createdAt": r["created_at"].isoformat(),
+        # False until real authentication exists. An account an administrator
+        # created but nobody can sign into is worth showing as exactly that.
+        "canSignIn": r["can_sign_in"],
+    } for r in rows]
+
+
+@app.get("/knowledge")
+def knowledge(q_text: str | None = Query(None, alias="q"),
+              limit: int = Query(50, ge=1, le=200)) -> list[dict]:
+    """Procedures and troubleshooting notes.
+
+    Content the client authors and we store. Empty until somebody writes
+    something, which is the honest state for a new deployment — the fixture
+    that stood here contained articles nobody had written.
+    """
+    if q_text:
+        rows = q("""
+            SELECT article_id, title, category, tags, plant_code, author,
+                   updated_at, left(body, 240) AS excerpt
+            FROM kb_articles
+            WHERE to_tsvector('english', title || ' ' || body)
+                  @@ plainto_tsquery('english', %s)
+            ORDER BY updated_at DESC LIMIT %s
+        """, (q_text, limit))
+    else:
+        rows = q("""
+            SELECT article_id, title, category, tags, plant_code, author,
+                   updated_at, left(body, 240) AS excerpt
+            FROM kb_articles ORDER BY updated_at DESC LIMIT %s
+        """, (limit,))
+    return [{
+        "id": str(r["article_id"]),
+        "title": r["title"],
+        "category": r["category"],
+        "tags": r["tags"] or [],
+        "plantCode": r["plant_code"],
+        "author": r["author"],
+        "updatedAt": r["updated_at"].isoformat(),
+        "excerpt": r["excerpt"],
+    } for r in rows]
+
+
+@app.get("/audit")
+def audit(limit: int = Query(100, ge=1, le=500)) -> list[dict]:
+    """What this system did, and when.
+
+    Not plant commands — there is no write path, so there are none to record.
+    This is the ingest's own history: what ran, what it loaded, whether the
+    row counts reconciled, and what it refused.
+
+    That is the audit trail an operator actually needs to answer "why does the
+    chart change" — and unlike an equipment log, every input already exists.
+    """
+    rows = q("""
+        SELECT run_id, started_at, finished_at, files_seen, files_skipped,
+               readings_in, readings_out, reconciled, error, rejections
+        FROM ingest_runs
+        WHERE finished_at IS NOT NULL
+        ORDER BY finished_at DESC
+        LIMIT %s
+    """, (limit,))
+    out = []
+    for r in rows:
+        dropped = (r["readings_in"] or 0) - (r["readings_out"] or 0)
+        out.append({
+            "id": str(r["run_id"]),
+            "action": "ingest",
+            "startedAt": r["started_at"].isoformat() if r["started_at"] else None,
+            "finishedAt": r["finished_at"].isoformat() if r["finished_at"] else None,
+            "durationSeconds": (
+                round((r["finished_at"] - r["started_at"]).total_seconds(), 1)
+                if r["started_at"] and r["finished_at"] else None),
+            "filesSeen": r["files_seen"],
+            "filesSkipped": r["files_skipped"],
+            "readingsIn": r["readings_in"],
+            "readingsOut": r["readings_out"],
+            "dropped": dropped,
+            # null means the run was not checked — every file was already
+            # loaded, so there was nothing to reconcile. Distinct from false.
+            "reconciled": r["reconciled"],
+            "error": r["error"],
+            "rejections": r["rejections"],
+            "outcome": ("error" if r["error"]
+                        else "failed" if r["reconciled"] is False
+                        else "no-op" if r["readings_out"] == 0
+                        else "ok"),
+        })
+    return out
+
+
+@app.get("/energy")
+def energy(hours: int = Query(24, ge=1, le=8760)) -> dict:
+    """Consumption per motor control centre, plus instantaneous load.
+
+    Consumption comes from counter differences, never from the counter itself:
+    a kWh meter reports a lifetime total, so energy used is the change between
+    two readings. Storing the total rather than the delta means a missed poll
+    costs nothing — the next difference spans the gap and is still correct.
+    """
+    newest = q("SELECT max(ts) AS t FROM readings")[0]["t"]
+    if newest is None:
+        return {"meters": [], "totalKwh": None, "hours": hours}
+    since = newest - timedelta(hours=hours)
+
+    rows = q("""
+        SELECT s.sensor_id, s.tag, s.location, s.plant_code, p.name AS plant_name,
+               sum(c.delta)          AS kwh,
+               max(c.total)::bigint  AS lifetime,
+               count(*)              AS points
+        FROM counter_deltas c
+        JOIN sensors s USING (sensor_id)
+        JOIN plants  p USING (plant_code)
+        WHERE s.parameter = 'energy' AND c.ts > %s AND c.delta IS NOT NULL
+        GROUP BY s.sensor_id, s.tag, s.location, s.plant_code, p.name
+        ORDER BY s.tag
+    """, (since,))
+
+    # Instantaneous load, which is a genuine analogue input rather than a total.
+    load = {r["location"]: r["kw"] for r in q("""
+        SELECT s.location, round(l.value::numeric, 1) AS kw
+        FROM latest_readings l JOIN sensors s USING (sensor_id)
+        WHERE s.parameter = 'power'
+    """)}
+
+    meters = [{
+        "id": r["sensor_id"], "tag": r["tag"], "location": r["location"],
+        "plantId": plant_id(r["plant_code"]), "plantName": r["plant_name"],
+        "kwh": round(r["kwh"], 1) if r["kwh"] is not None else None,
+        "lifetimeKwh": r["lifetime"],
+        "currentKw": float(load[r["location"]]) if r["location"] in load else None,
+        "readings": r["points"],
+    } for r in rows]
+
+    total = sum(m["kwh"] or 0 for m in meters)
+    return {
+        "meters": meters,
+        "totalKwh": round(total, 1) if meters else None,
+        "hours": hours,
+    }
+
+
+@app.get("/equipment")
+def equipment() -> list[dict]:
+    """Pumps, blowers and valves, assembled from their tags.
+
+    There is no equipment table. A plant's asset register lives in a CMMS, and
+    we have not been given one — but the PLC already tells us which equipment
+    exists and how it is behaving, because every pump carries a run bit, a
+    fault bit and an hours-run counter under a shared tag suffix.
+
+    XS-P-101 / XA-P-101 / KQ-P-101 are three views of one pump. Grouping by the
+    suffix reconstructs the asset without inventing anything.
+    """
+    rows = q("""
+        SELECT s.tag, s.parameter, s.location, s.plant_code, s.stage,
+               p.name AS plant_name, l.value, l.ts, l.status
+        FROM sensors s
+        JOIN plants p USING (plant_code)
+        LEFT JOIN latest_readings l USING (sensor_id)
+        WHERE s.parameter IN ('run_status','fault','run_hours','start_count',
+                              'valve_open','valve_closed')
+        ORDER BY s.tag
+    """)
+
+    assets: dict[str, dict] = {}
+    for r in rows:
+        # XS-P-101 -> P-101.  KQ-P-101S is the start counter for the same asset.
+        parts = r["tag"].split("-", 1)
+        if len(parts) != 2:
+            continue
+        key = parts[1].rstrip("S") if r["parameter"] == "start_count" else parts[1]
+        a = assets.setdefault(key, {
+            "id": key, "name": r["location"], "plantId": plant_id(r["plant_code"]),
+            "plantName": r["plant_name"], "stage": r["stage"],
+            "kind": "valve" if key.startswith("V-") else
+                    "blower" if key.startswith("B-") else "pump",
+            "running": None, "fault": None, "runHours": None,
+            "startCount": None, "valveOpen": None, "valveClosed": None,
+            "lastSeen": None,
+        })
+        v = r["value"]
+        if r["parameter"] == "run_status":   a["running"] = bool(v) if v is not None else None
+        elif r["parameter"] == "fault":      a["fault"] = bool(v) if v is not None else None
+        elif r["parameter"] == "run_hours":  a["runHours"] = int(v) if v is not None else None
+        elif r["parameter"] == "start_count":a["startCount"] = int(v) if v is not None else None
+        elif r["parameter"] == "valve_open": a["valveOpen"] = bool(v) if v is not None else None
+        elif r["parameter"] == "valve_closed":a["valveClosed"] = bool(v) if v is not None else None
+        if r["ts"] and (a["lastSeen"] is None or r["ts"].isoformat() > a["lastSeen"]):
+            a["lastSeen"] = r["ts"].isoformat()
+
+    out = []
+    for a in assets.values():
+        # A valve reporting neither open nor closed is travelling; reporting
+        # both means a limit switch has failed. Only visible because they are
+        # two separate tags.
+        if a["kind"] == "valve" and a["valveOpen"] and a["valveClosed"]:
+            a["health"] = "fault"
+            a["note"] = "both limit switches set — one has failed"
+        elif a["fault"]:
+            a["health"] = "fault"
+            a["note"] = "fault bit set"
+        elif a["runHours"] is not None and a["runHours"] > 30000:
+            # A conventional overhaul interval. The real figure comes from the
+            # manufacturer's manual, which we do not have.
+            a["health"] = "due"
+            a["note"] = f"{a['runHours']:,} hours run — service interval assumed"
+        else:
+            a["health"] = "ok"
+            a["note"] = None
+        out.append(a)
+    return sorted(out, key=lambda a: (a["health"] != "fault", a["id"]))
 
 
 @app.get("/kpis/quality")

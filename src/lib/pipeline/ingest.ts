@@ -21,6 +21,16 @@ const CANONICAL_UNIT: Record<SensorType, string> = {
   level: '%',
   conductivity: 'µS/cm',
   ORP: 'mV',
+  energy: 'kWh',
+  power: 'kW',
+  // States and counts have no unit. A blank is correct — inventing one would
+  // put "1 pH" beside a pump-run bit.
+  run_status: '',
+  fault: '',
+  run_hours: 'h',
+  start_count: '',
+  valve_open: '',
+  valve_closed: '',
 };
 
 /**
