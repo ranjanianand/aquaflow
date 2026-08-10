@@ -33,6 +33,27 @@ logging.basicConfig(level=logging.WARNING,
 log = logging.getLogger("ingest")
 
 
+def find_register_map() -> str:
+    """Locate Raw_data_PLC/register-map/tag-map.json by walking upwards.
+
+    Hardcoding parent.parent broke the moment this package moved into the
+    application repository: the path silently pointed at a directory that does
+    not exist, and the failure surfaced as a FileNotFoundError deep in the
+    loader rather than as "the default guess was wrong".
+
+    Searching upward survives the layout changing again, and the data folder
+    deliberately lives outside the repository.
+    """
+    here = Path(__file__).resolve()
+    for parent in [here.parent, *here.parents]:
+        candidate = parent / "Raw_data_PLC" / "register-map" / "tag-map.json"
+        if candidate.exists():
+            return str(candidate)
+    raise SystemExit(
+        "cannot find Raw_data_PLC/register-map/tag-map.json in any parent "
+        "directory. Pass the path explicitly as the second argument.")
+
+
 def _refresh_aggregates(conn) -> None:
     with conn.cursor() as cur:
         try:
@@ -140,6 +161,11 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print(__doc__)
         raise SystemExit(64)
-    default_map = str(Path(__file__).parent.parent / "Raw_data_PLC" /
-                      "register-map" / "tag-map.json")
-    raise SystemExit(main(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else default_map))
+    # Resolved only when no path is given. Calling it unconditionally meant
+    # the search ran — and failed — even when the caller had supplied a valid
+    # path, which is exactly what happens inside the Airflow container: the
+    # data is mounted at /opt/mwts/data, nowhere above /opt/mwts/pipeline.
+    raise SystemExit(main(
+        sys.argv[1],
+        sys.argv[2] if len(sys.argv) > 2 else find_register_map(),
+    ))

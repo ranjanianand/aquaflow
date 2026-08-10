@@ -24,6 +24,12 @@ PIPELINE = "/opt/mwts/pipeline"
 DATA = "/opt/mwts/data"
 TAG_MAP = f"{DATA}/register-map/tag-map.json"
 
+# Which dataset to ingest. Set as a constant rather than discovered: the folder
+# is a deliberate choice about what the dashboard shows, not something a DAG
+# should guess. Change it here when the source changes — and when the client's
+# bucket replaces all of this, it becomes a prefix rather than a path.
+SOURCE = f"{DATA}/timeseries-fresh"
+
 
 @dag(
     dag_id="mwts_ingest",
@@ -83,7 +89,7 @@ def mwts_ingest():
         import sys
 
         result = subprocess.run(
-            [sys.executable, f"{PIPELINE}/ingest.py", f"{DATA}/timeseries", TAG_MAP],
+            [sys.executable, f"{PIPELINE}/ingest.py", SOURCE, TAG_MAP],
             capture_output=True, text=True, cwd=PIPELINE,
         )
         print(result.stdout)

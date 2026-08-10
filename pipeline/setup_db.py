@@ -27,6 +27,27 @@ from mwts_pipeline.thresholds import _PLAUSIBLE, _STAGE               # noqa: E4
 
 HERE = Path(__file__).parent
 
+
+def find_register_map() -> str:
+    """Locate Raw_data_PLC/register-map/tag-map.json by walking upwards.
+
+    Hardcoding parent.parent broke the moment this package moved into the
+    application repository: the path silently pointed at a directory that does
+    not exist, and the failure surfaced as a FileNotFoundError deep in the
+    loader rather than as "the default guess was wrong".
+
+    Searching upward survives the layout changing again, and the data folder
+    deliberately lives outside the repository.
+    """
+    here = Path(__file__).resolve()
+    for parent in [here.parent, *here.parents]:
+        candidate = parent / "Raw_data_PLC" / "register-map" / "tag-map.json"
+        if candidate.exists():
+            return str(candidate)
+    raise SystemExit(
+        "cannot find Raw_data_PLC/register-map/tag-map.json in any parent "
+        "directory. Pass the path explicitly as the second argument.")
+
 # Plant names are not in the register map — the map knows tags, not sites.
 # In production these come from the client; here they mirror the prototype.
 PLANT_NAMES = {
