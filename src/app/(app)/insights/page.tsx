@@ -1,37 +1,33 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { InsightsSummary } from '@/components/insights/insights-summary';
-import { InsightCard } from '@/components/insights/insight-card';
+import { ObservationCard } from '@/components/insights/observation-card';
+import { ObservationDetailModal } from '@/components/insights/observation-detail-modal';
 import { ProcessOptimization } from '@/components/insights/process-optimization';
-import { mockInsights, OperationalInsight } from '@/data/mock-operations';
-import { mockPlants } from '@/data/mock-plants';
+import { usePlants } from '@/lib/api/hooks';
 import {
   Lightbulb,
   Filter,
   SlidersHorizontal,
   TrendingUp,
   Wrench,
-  DollarSign,
-  Shield,
   Zap,
   RefreshCw,
   ChevronDown,
   Sparkles,
   History,
-  CheckCircle2,
-  XCircle,
-  ThumbsUp,
-  ThumbsDown,
-  Calendar,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { InsightsSkeleton } from '@/components/shared/loading-skeleton';
 import { FEATURES } from '@/lib/features';
+import { useAcknowledgements, useAckHistory, useInsights } from '@/lib/api/hooks';
+import { deriveObservations, KIND_LABEL,
+         type Observation, type ObservationKind } from '@/lib/insights/derive';
 import { FeatureDisabled } from '@/components/shared/feature-disabled';
 
-type InsightType = OperationalInsight['type'] | 'all';
-type InsightPriority = OperationalInsight['priority'] | 'all';
+type InsightType = ObservationKind | 'all';
+type InsightPriority = 'high' | 'medium' | 'low' | 'all';
 
 function InsightsContent() {
   const [isLoading, setIsLoading] = useState(true);
@@ -39,6 +35,9 @@ function InsightsContent() {
   const [selectedPriority, setSelectedPriority] = useState<InsightPriority>('all');
   const [selectedPlant, setSelectedPlant] = useState<string>('all');
   const [activeTab, setActiveTab] = useState('recommendations');
+  const { data: acks, refresh: refreshAcks } = useAcknowledgements();
+  const { data: ackHistory } = useAckHistory(50);
+  const [openObservation, setOpenObservation] = useState<Observation | null>(null);
 
   // Simulate initial data loading
   useEffect(() => {
@@ -46,49 +45,46 @@ function InsightsContent() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Filter insights
-  const filteredInsights = mockInsights.filter((insight) => {
-    if (selectedType !== 'all' && insight.type !== selectedType) return false;
-    if (selectedPriority !== 'all' && insight.priority !== selectedPriority) return false;
-    if (selectedPlant !== 'all' && insight.plantId !== selectedPlant) return false;
+  // Observations counted from readings. Nothing modelled, so nothing
+  // recommended — see lib/insights/derive.ts.
+  const { data: insightsData, loading: insightsLoading } = useInsights(30);
+  const { data: livePlants } = usePlants();
+  const mockPlants = livePlants ?? [];
+
+  const observations = useMemo(
+    () => deriveObservations(insightsData ?? null),
+    [insightsData]);
+
+  const filteredInsights = observations.filter((o) => {
+    if (selectedType !== 'all' && o.kind !== selectedType) return false;
+    if (selectedPriority !== 'all' && o.priority !== selectedPriority) return false;
+    if (selectedPlant !== 'all' && o.plantId !== selectedPlant) return false;
     return true;
   });
 
-  // Sort by priority (high first)
-  const sortedInsights = [...filteredInsights].sort((a, b) => {
-    const priorityOrder = { high: 0, medium: 1, low: 2 };
-    return priorityOrder[a.priority] - priorityOrder[b.priority];
-  });
-
-  const handleApply = (id: string) => {
-    console.log('Applying recommendation:', id);
-    // In real app, this would send to backend
-  };
-
-  const handleDismiss = (id: string) => {
-    console.log('Dismissing recommendation:', id);
-    // In real app, this would update state
-  };
+  const rank = { high: 0, medium: 1, low: 2 };
+  const sortedInsights = [...filteredInsights].sort(
+    (a, b) => rank[a.priority] - rank[b.priority]);
 
   const typeFilters = [
-    { value: 'all', label: 'All Types', icon: Lightbulb },
-    { value: 'optimization', label: 'Optimization', icon: TrendingUp },
-    { value: 'maintenance', label: 'Maintenance', icon: Wrench },
-    { value: 'efficiency', label: 'Efficiency', icon: Zap },
-    { value: 'cost', label: 'Cost', icon: DollarSign },
-    { value: 'compliance', label: 'Compliance', icon: Shield },
+    { value: 'all', label: 'All', icon: Lightbulb },
+    { value: 'breach', label: KIND_LABEL.breach, icon: TrendingUp },
+    { value: 'stuck', label: KIND_LABEL.stuck, icon: Zap },
+    { value: 'silent', label: KIND_LABEL.silent, icon: Wrench },
   ];
 
-  const highPriorityCount = mockInsights.filter(i => i.priority === 'high').length;
+  const highPriorityCount = filteredInsights.filter(i => i.priority === 'high').length;
 
-  if (isLoading) {
+
+
+  if (isLoading || insightsLoading) {
     return (
       <div className="min-h-screen flex flex-col bg-slate-100">
         <header className="bg-slate-800 px-4 py-2.5 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Sparkles className="h-4 w-4 text-white" />
-            <span className="text-sm font-bold text-white uppercase tracking-wider">Operational Insights</span>
-            <span className="text-[10px] text-slate-400">AI-powered recommendations</span>
+            <span className="text-sm font-bold text-white uppercase tracking-wider">Insights</span>
+            <span className="text-[10px] text-slate-400">Observations counted from sensor readings</span>
           </div>
         </header>
         <InsightsSkeleton />
@@ -102,8 +98,8 @@ function InsightsContent() {
       <header className="bg-slate-800 px-4 py-2.5 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Sparkles className="h-4 w-4 text-white" />
-          <span className="text-sm font-bold text-white uppercase tracking-wider">Operational Insights</span>
-          <span className="text-[10px] text-slate-400">AI-powered recommendations</span>
+          <span className="text-sm font-bold text-white uppercase tracking-wider">Insights</span>
+          <span className="text-[10px] text-slate-400">Observations counted from sensor readings</span>
         </div>
         <div className="flex items-center gap-3">
           {highPriorityCount > 0 && (
@@ -112,13 +108,14 @@ function InsightsContent() {
               {highPriorityCount} HIGH PRIORITY
             </span>
           )}
-          <span className="text-[10px] font-mono text-emerald-400">AI ENGINE ACTIVE</span>
+          <span className="text-[10px] font-mono text-slate-400">LAST 30 DAYS</span>
         </div>
       </header>
 
       <div className="flex-1 p-4 space-y-4">
         {/* Summary Cards */}
-        <InsightsSummary />
+        <InsightsSummary observations={observations}
+                         coverage={insightsData?.coverage ?? null} />
 
         {/* Tab Header */}
         <div className="flex items-center justify-between">
@@ -244,11 +241,12 @@ function InsightsContent() {
             {sortedInsights.length > 0 ? (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {sortedInsights.map((insight) => (
-                  <InsightCard
+                  <ObservationCard
                     key={insight.id}
-                    insight={insight}
-                    onApply={handleApply}
-                    onDismiss={handleDismiss}
+                    observation={insight}
+                    acknowledgement={acks?.[insight.id] ?? null}
+                    onAcknowledged={refreshAcks}
+                    onOpenData={setOpenObservation}
                   />
                 ))}
               </div>
@@ -266,138 +264,114 @@ function InsightsContent() {
 
         {/* Process Analysis Tab */}
         {activeTab === 'processes' && (
-          <ProcessOptimization />
+          <ProcessOptimization data={insightsData ?? null} loading={insightsLoading} />
         )}
 
         {/* History Tab */}
         {activeTab === 'history' && (
           <div className="space-y-4">
-            {/* History Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="border-2 border-slate-300 bg-white p-4 border-l-[3px] border-l-emerald-500">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Applied</span>
-                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                </div>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-bold font-mono text-emerald-600">24</span>
-                  <span className="text-[10px] text-slate-500">THIS MONTH</span>
-                </div>
-              </div>
-
-              <div className="border-2 border-slate-300 bg-white p-4 border-l-[3px] border-l-slate-400">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Dismissed</span>
-                  <XCircle className="h-4 w-4 text-slate-500" />
-                </div>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-bold font-mono text-slate-600">8</span>
-                  <span className="text-[10px] text-slate-500">THIS MONTH</span>
-                </div>
-              </div>
-
-              <div className="border-2 border-slate-300 bg-white p-4 border-l-[3px] border-l-emerald-500">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Helpful</span>
-                  <ThumbsUp className="h-4 w-4 text-emerald-600" />
-                </div>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-bold font-mono text-emerald-600">87%</span>
-                  <span className="text-[10px] text-slate-500">ACCURACY</span>
-                </div>
-              </div>
-
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="border-2 border-slate-300 bg-white p-4 border-l-[3px] border-l-blue-500">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Savings</span>
-                  <DollarSign className="h-4 w-4 text-blue-600" />
-                </div>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-bold font-mono text-blue-600">₹4.2L</span>
-                  <span className="text-[10px] text-slate-500">REALIZED</span>
-                </div>
-              </div>
-            </div>
-
-            {/* History Timeline */}
-            <div className="border-2 border-slate-300 bg-white overflow-hidden">
-              <div className="bg-slate-100 px-4 py-2.5 border-b-2 border-slate-300 flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-slate-500" />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
-                  Insight History
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  Acknowledged
                 </span>
-                <span className="text-[10px] text-slate-400 ml-auto">Last 30 days</span>
+                <p className="text-3xl font-bold font-mono text-blue-600 mt-1">
+                  {ackHistory?.length ?? 0}
+                </p>
+                <p className="text-[10px] text-slate-500">observations read</p>
               </div>
-
-              <div className="divide-y divide-slate-200">
-                {/* Mock history items */}
-                {[
-                  { id: 1, title: 'Reduce RO pressure to 12.5 bar', type: 'optimization', status: 'applied', outcome: 'helpful', date: '2 days ago', savings: '₹45,000/mo' },
-                  { id: 2, title: 'Adjust chlorine dosing to 1.8 ppm', type: 'efficiency', status: 'applied', outcome: 'helpful', date: '5 days ago', savings: '₹12,000/mo' },
-                  { id: 3, title: 'Schedule pump maintenance', type: 'maintenance', status: 'dismissed', outcome: null, date: '1 week ago', savings: null },
-                  { id: 4, title: 'Optimize filter backwash frequency', type: 'cost', status: 'applied', outcome: 'not_helpful', date: '2 weeks ago', savings: '₹8,000/mo' },
-                  { id: 5, title: 'Reduce chemical inventory buffer', type: 'cost', status: 'applied', outcome: 'helpful', date: '3 weeks ago', savings: '₹22,000/mo' },
-                ].map((item) => (
-                  <div
-                    key={item.id}
-                    className={cn(
-                      'p-4 hover:bg-slate-50 transition-colors',
-                      item.status === 'applied' && 'border-l-[3px] border-l-emerald-500',
-                      item.status === 'dismissed' && 'border-l-[3px] border-l-slate-400'
-                    )}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          {item.status === 'applied' ? (
-                            <span className="flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-bold bg-emerald-100 text-emerald-700">
-                              <CheckCircle2 className="h-3 w-3" />
-                              APPLIED
-                            </span>
-                          ) : (
-                            <span className="flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-bold bg-slate-100 text-slate-600">
-                              <XCircle className="h-3 w-3" />
-                              DISMISSED
-                            </span>
-                          )}
-                          <span className="text-[9px] px-1.5 py-0.5 bg-slate-100 text-slate-600 font-medium uppercase">
-                            {item.type}
-                          </span>
-                          {item.outcome && (
-                            <span className={cn(
-                              'flex items-center gap-0.5 text-[9px] px-1.5 py-0.5',
-                              item.outcome === 'helpful' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
-                            )}>
-                              {item.outcome === 'helpful' ? <ThumbsUp className="h-2.5 w-2.5" /> : <ThumbsDown className="h-2.5 w-2.5" />}
-                              {item.outcome === 'helpful' ? 'Helpful' : 'Not helpful'}
-                            </span>
-                          )}
-                        </div>
-                        <h4 className="text-sm font-medium text-slate-700">{item.title}</h4>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-[10px] text-slate-500">{item.date}</div>
-                        {item.savings && (
-                          <div className="text-[11px] font-bold font-mono text-emerald-600 mt-1">
-                            {item.savings}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
+              <div className="border-2 border-slate-300 bg-white p-4 border-l-[3px] border-l-slate-400">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  Awaiting review
+                </span>
+                <p className="text-3xl font-bold font-mono text-slate-700 mt-1">
+                  {observations.filter((o) => !acks?.[o.id]).length}
+                </p>
+                <p className="text-[10px] text-slate-500">no one has acknowledged</p>
               </div>
-
-              {/* Load More */}
-              <div className="p-4 border-t-2 border-slate-200 bg-slate-50 text-center">
-                <button className="text-[11px] font-bold text-slate-600 hover:text-slate-900 transition-colors">
-                  Load More History...
-                </button>
+              <div className="border-2 border-slate-300 bg-white p-4 border-l-[3px] border-l-slate-400">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  Most recent
+                </span>
+                <p className="text-sm font-semibold text-slate-700 mt-2">
+                  {ackHistory?.[0]
+                    ? new Date(ackHistory[0].acknowledgedAt).toLocaleString()
+                    : '\u2014'}
+                </p>
+                <p className="text-[10px] text-slate-500">
+                  {ackHistory?.[0] ? `by ${ackHistory[0].acknowledgedBy}` : 'nothing yet'}
+                </p>
               </div>
             </div>
+
+            <div className="border-2 border-slate-300 bg-white overflow-hidden">
+              <div className="bg-slate-50 px-4 py-2 border-b-2 border-slate-200 flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700">
+                  Acknowledgement history
+                </span>
+                <span className="text-[10px] text-slate-500">newest first</span>
+              </div>
+
+              {(ackHistory ?? []).length === 0 ? (
+                <div className="p-10 text-center">
+                  <History className="h-9 w-9 mx-auto text-slate-300 mb-3" />
+                  <p className="text-sm text-slate-500 mb-1">Nothing acknowledged yet</p>
+                  {/* Says what this records, so an empty panel is not read as
+                      a screen that is broken or not wired up. */}
+                  <p className="text-[11px] text-slate-400 max-w-md mx-auto">
+                    When somebody acknowledges an observation it is recorded here
+                    with their name and the time, so the next shift can see what
+                    has already been looked at.
+                  </p>
+                </div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-[10px] uppercase tracking-wider text-slate-500 border-b-2 border-slate-200">
+                      <th className="text-left px-4 py-2 font-bold">Observation</th>
+                      <th className="text-left px-4 py-2 font-bold">Plant</th>
+                      <th className="text-left px-4 py-2 font-bold">Acknowledged by</th>
+                      <th className="text-left px-4 py-2 font-bold">When</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(ackHistory ?? []).map((a) => (
+                      <tr key={a.id} className="border-b border-slate-100">
+                        <td className="px-4 py-2">
+                          <span className="text-slate-700">{a.subject}</span>
+                          <span className="block text-[10px] text-slate-400">
+                            {KIND_LABEL[a.kind as ObservationKind] ?? a.kind}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2 text-slate-600 text-xs">
+                          {a.plantName ?? '\u2014'}
+                        </td>
+                        <td className="px-4 py-2 text-slate-700 text-xs">
+                          {a.acknowledgedBy}
+                        </td>
+                        <td className="px-4 py-2 font-mono text-[11px] text-slate-500">
+                          {new Date(a.acknowledgedAt).toLocaleString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <p className="text-[11px] text-slate-400">
+              Acknowledging records that somebody read an observation. It sends
+              nothing to the plant — any change is made in the control system by
+              an operator.
+            </p>
           </div>
         )}
       </div>
+      <ObservationDetailModal
+        observation={openObservation}
+        open={openObservation !== null}
+        onOpenChange={(o) => { if (!o) setOpenObservation(null); }}
+      />
     </div>
   );
 }

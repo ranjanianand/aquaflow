@@ -52,15 +52,19 @@ export const FEATURES = {
   businessSuite: false,
 
   /**
-   * Operational Insights.
+   * Insights.
    *
-   * Reads as an analytics screen, but every recommendation carries an
-   * "Apply recommendation" action that writes a setpoint to equipment — feed
-   * pressure, chlorine dosing rate, backwash timing. That is the capability
-   * gated by writeBack, so it cannot ship while the control path is absent.
-   * It could return advisory-only, with the apply action removed.
+   * Was withheld because the screen mixed three things: analytics over sensor
+   * data, operational recommendations that wrote setpoints to equipment (feed
+   * pressure, dosing rate, backwash timing), and a commercial view of cost and
+   * savings. The first is arithmetic over readings; the second needed the
+   * control path gated by writeBack; the third needed a price list.
+   *
+   * Rebuilt as the first only — breach rates, silent instruments, held values,
+   * what the ingest discarded. No setpoints are written and no costs are
+   * shown, so nothing here depends on a capability the system lacks.
    */
-  operationalInsights: false,
+  operationalInsights: true,
 
   /**
    * Process diagrams — both the P&ID schematic and the process flow canvas.

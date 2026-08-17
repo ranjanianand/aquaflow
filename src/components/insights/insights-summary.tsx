@@ -1,90 +1,64 @@
 'use client';
 
-import {
-  Lightbulb,
-  DollarSign,
-  Zap,
-  TrendingUp,
-} from 'lucide-react';
-import {
-  mockInsights,
-  getTotalPotentialSavings,
-  mockCostMetrics
-} from '@/data/mock-operations';
+import { AlertTriangle, EyeOff, Minus, Activity } from 'lucide-react';
+import { KIND_LABEL, type Observation } from '@/lib/insights/derive';
 
-export function InsightsSummary() {
-  const totalInsights = mockInsights.length;
-  const highPriority = mockInsights.filter(i => i.priority === 'high').length;
-  const potentialSavings = getTotalPotentialSavings();
-  const { totalSavings, percentChange } = mockCostMetrics;
+/**
+ * Counts of what the readings show.
+ *
+ * Counted from the same list rendered underneath, so the totals cannot drift
+ * from the cards. The previous version totalled a fixture while the list
+ * showed something else, which put an authoritative-looking number on screen
+ * that disagreed with everything below it.
+ */
+export function InsightsSummary({ observations, coverage }: {
+  observations: Observation[];
+  coverage?: { total: number; reporting: number } | null;
+}) {
+  const count = (kind: Observation['kind']) =>
+    observations.filter((o) => o.kind === kind).length;
 
-  // Calculate total energy savings potential
-  const energySavings = mockInsights.reduce(
-    (acc, i) => acc + (i.impact.energySavings || 0),
-    0
-  );
+  const tiles = [
+    {
+      label: 'Observations', value: observations.length,
+      sub: `${observations.filter(o => o.priority === 'high').length} high priority`,
+      icon: Activity, accent: 'border-l-blue-500', fg: 'text-blue-600',
+    },
+    {
+      label: KIND_LABEL.breach, value: count('breach'),
+      sub: 'instruments outside their band',
+      icon: AlertTriangle, accent: 'border-l-red-500', fg: 'text-red-600',
+    },
+    {
+      label: KIND_LABEL.stuck, value: count('stuck'),
+      sub: 'readings not moving',
+      icon: Minus, accent: 'border-l-amber-500', fg: 'text-amber-600',
+    },
+    {
+      label: 'Reporting', value: coverage ? coverage.reporting : '—',
+      sub: coverage ? `of ${coverage.total} instruments` : 'coverage',
+      icon: EyeOff, accent: 'border-l-slate-400', fg: 'text-slate-700',
+    },
+  ];
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-      {/* Active Insights */}
-      <div className="border-2 border-slate-300 bg-white p-4 border-l-[3px] border-l-blue-500">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Active Insights</span>
-          <Lightbulb className="h-4 w-4 text-blue-600" />
-        </div>
-        <div className="flex items-baseline gap-2">
-          <span className="text-xl font-bold font-mono text-blue-600">{totalInsights}</span>
-          {highPriority > 0 && (
-            <span className="text-[10px] font-medium text-rose-600">
-              {highPriority} HIGH
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Potential Savings */}
-      <div className="border-2 border-slate-300 bg-white p-4 border-l-[3px] border-l-emerald-500">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Potential Savings</span>
-          <DollarSign className="h-4 w-4 text-emerald-600" />
-        </div>
-        <div className="flex items-baseline gap-1">
-          <span className="text-xl font-bold font-mono text-emerald-600">
-            ${potentialSavings.toLocaleString()}
-          </span>
-          <span className="text-[10px] text-slate-500">/MO</span>
-        </div>
-      </div>
-
-      {/* Energy Savings */}
-      <div className="border-2 border-slate-300 bg-white p-4 border-l-[3px] border-l-amber-500">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Energy Potential</span>
-          <Zap className="h-4 w-4 text-amber-600" />
-        </div>
-        <div className="flex items-baseline gap-1">
-          <span className="text-xl font-bold font-mono text-amber-600">
-            {energySavings.toLocaleString()}
-          </span>
-          <span className="text-[10px] text-slate-500">KWH/MO</span>
-        </div>
-      </div>
-
-      {/* Realized Savings */}
-      <div className="border-2 border-slate-300 bg-white p-4 border-l-[3px] border-l-purple-500">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Realized This Month</span>
-          <TrendingUp className="h-4 w-4 text-purple-600" />
-        </div>
-        <div className="flex items-baseline gap-1">
-          <span className="text-xl font-bold font-mono text-purple-600">
-            ${totalSavings.toLocaleString()}
-          </span>
-          <span className="text-[10px] font-bold text-emerald-600">
-            +{percentChange}%
-          </span>
-        </div>
-      </div>
+      {tiles.map((t) => {
+        const Icon = t.icon;
+        return (
+          <div key={t.label}
+               className={`border-2 border-slate-300 bg-white p-4 border-l-[3px] ${t.accent}`}>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                {t.label}
+              </span>
+              <Icon className={`h-4 w-4 ${t.fg}`} />
+            </div>
+            <span className={`text-xl font-bold font-mono ${t.fg}`}>{t.value}</span>
+            <p className="text-[10px] text-slate-500 mt-0.5">{t.sub}</p>
+          </div>
+        );
+      })}
     </div>
   );
 }
