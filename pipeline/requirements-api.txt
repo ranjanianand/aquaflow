@@ -3,3 +3,5 @@
 fastapi>=0.115,<0.116
 uvicorn[standard]>=0.32,<0.33
 psycopg[binary]>=3.2,<3.3
+# FastAPI needs this to accept a file upload.
+python-multipart>=0.0.9

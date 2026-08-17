@@ -66,6 +66,25 @@ _PLAUSIBLE: dict[str, Band] = {
     # means it has stopped. Widths are per-MCC and would be set from the
     # installed load — these are placeholders.
     "power":        (5, 200, 0, 250),
+
+    # ── Laboratory parameters ───────────────────────────────────────────
+    # Measured by hand, usually daily, never by an inline instrument. They
+    # belong here because an alarm band applies whether a number came from a
+    # probe or a technician.
+    #
+    # These figures are indicative. COD and BOD limits in particular are set by
+    # discharge consent rather than by drinking-water standards, and differ per
+    # site — they must be confirmed against the client's own consent.
+    "COD":          (0, 50, 0, 125),      # mg/L, chemical oxygen demand
+    "BOD":          (0, 10, 0, 25),       # mg/L, biochemical oxygen demand
+    "TSS":          (0, 20, 0, 45),       # mg/L, total suspended solids
+    "coliform":     (0, 0, 0, 0),         # CFU/100mL — any detection is a fail
+    "hardness":     (50, 300, 0, 500),    # mg/L as CaCO3
+    "alkalinity":   (50, 200, 20, 400),   # mg/L as CaCO3
+    "iron":         (0, 0.2, 0, 0.3),     # mg/L
+    "manganese":    (0, 0.05, 0, 0.1),    # mg/L
+    "fluoride":     (0.5, 1.0, 0, 1.5),   # mg/L
+    "nitrate":      (0, 40, 0, 50),       # mg/L as NO3
 }
 
 # Parameters that are states or totals rather than measurements. They reach

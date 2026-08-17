@@ -21,8 +21,19 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import sys
+from pathlib import Path
+
 import psycopg
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Body, FastAPI, File, HTTPException, Query, UploadFile
+
+# The pipeline package sits beside this module in the image.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+from mwts_pipeline import registry                                    # noqa: E402
+from mwts_pipeline.adapters import ParseError, UnknownFormat, parse_file  # noqa: E402
+from mwts_pipeline.models import TagMapEntry                          # noqa: E402
+from mwts_pipeline.process import process_envelope                    # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware
 from psycopg.rows import dict_row
 
@@ -60,7 +71,7 @@ _origins = os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in _origins.split(",") if o.strip()],
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST", "PATCH"],
     allow_headers=["*"],
 )
 
@@ -78,6 +89,18 @@ SENSOR_TYPE = {
     "run_status": "run_status", "fault": "fault",
     "run_hours": "run_hours", "start_count": "start_count",
     "valve_open": "valve_open", "valve_closed": "valve_closed",
+    # Laboratory parameters. Entered by hand, never by an instrument, but a
+    # reading is a reading — they belong on the same charts as the rest.
+    "COD": "COD",
+    "BOD": "BOD",
+    "TSS": "TSS",
+    "coliform": "coliform",
+    "hardness": "hardness",
+    "alkalinity": "alkalinity",
+    "iron": "iron",
+    "manganese": "manganese",
+    "fluoride": "fluoride",
+    "nitrate": "nitrate",
 }
 
 # Which readings matter most when several alarm at once. Turbidity and chlorine
@@ -125,14 +148,27 @@ def plant_code(pid: str) -> str:
     return f"WTP-{int(pid.split('-')[-1]):02d}"
 
 
-def comm_status(age_seconds: int | None, poll_seconds: int) -> str:
-    """online / stale / offline, judged against the plant's own poll rate.
+def comm_status(age_seconds: int | None, poll_seconds: int,
+                manual: bool = False) -> str:
+    """online / stale / offline, judged against how often data is expected.
 
     Hardcoding 30 and 60 seconds — as the prototype did — marks every sensor
     offline the moment data arrives hourly instead of by live session. The
-    thresholds have to come from how often the plant actually publishes.
+    thresholds have to come from how often readings actually arrive.
+
+    A hand-entered parameter is judged against a daily sampling round, not the
+    gateway's poll rate. A COD result taken this morning is current; calling it
+    offline three hours later would be nonsense, and worse, it would put a
+    perfectly healthy lab programme in the same list as a failed gateway.
     """
     if age_seconds is None:
+        return "offline"
+    if manual:
+        one_day = 86400
+        if age_seconds <= one_day * 1.5:
+            return "online"
+        if age_seconds <= one_day * 3:
+            return "stale"
         return "offline"
     if age_seconds <= poll_seconds * 1.5:
         return "online"
@@ -205,7 +241,8 @@ def all_sensors() -> list[dict]:
     """
     rows = q("""
         SELECT s.sensor_id, s.plant_code, s.tag, s.parameter, s.unit,
-               s.location, s.stage, l.ts, l.value, l.status, l.quality,
+               s.location, s.stage, s.manual_entry,
+               l.ts, l.value, l.status, l.quality,
                b.warn_min, b.warn_max, b.crit_min, b.crit_max, p.poll_seconds
         FROM sensors s
         JOIN plants p USING (plant_code)
@@ -233,13 +270,13 @@ def all_sensors() -> list[dict]:
             "critMin": r["crit_min"],
             "critMax": r["crit_max"],
             "status": r["status"] or "normal",
-            "commStatus": comm_status(age, r["poll_seconds"]),
+            "commStatus": comm_status(age, r["poll_seconds"], r["manual_entry"]),
             "lastUpdated": r["ts"].isoformat() if r["ts"] else None,
             "history": [],
             "priority": PRIORITY.get(r["parameter"], "medium"),
             "location": r["location"],
             "tag": r["tag"],
-            "dataSource": "file",
+            "dataSource": "manual" if r["manual_entry"] else "file",
             "stage": r["stage"],
         })
     return out
@@ -256,6 +293,7 @@ def plant_sensors(pid: str, history_hours: int = Query(24, ge=0, le=168)) -> lis
     code = plant_code(pid)
     rows = q("""
         SELECT s.sensor_id, s.tag, s.parameter, s.unit, s.location, s.stage,
+               s.manual_entry,
                l.ts, l.value, l.status, l.quality,
                b.warn_min, b.warn_max, b.crit_min, b.crit_max,
                p.poll_seconds
@@ -317,7 +355,7 @@ def plant_sensors(pid: str, history_hours: int = Query(24, ge=0, le=168)) -> lis
             "critMin": r["crit_min"],
             "critMax": r["crit_max"],
             "status": r["status"] or "normal",
-            "commStatus": comm_status(age, r["poll_seconds"]),
+            "commStatus": comm_status(age, r["poll_seconds"], r["manual_entry"]),
             "lastUpdated": r["ts"].isoformat() if r["ts"] else None,
             "history": history.get(r["sensor_id"], []),
             "priority": PRIORITY.get(r["parameter"], "medium"),
@@ -326,7 +364,7 @@ def plant_sensors(pid: str, history_hours: int = Query(24, ge=0, le=168)) -> lis
             # Every reading here came from a gateway file, never a live
             # session. The dashboard shows this so a stale value is not read
             # as a real-time one.
-            "dataSource": "file",
+            "dataSource": "manual" if r["manual_entry"] else "file",
             "stage": r["stage"],
             "quality": ("good" if r["quality"] is None or r["quality"] >= 192
                         else "uncertain" if r["quality"] >= 64 else "bad"),
@@ -472,7 +510,7 @@ def alerts_trend(days: int = Query(7, ge=1, le=90),
         "critical": r["critical"] or 0,
         "warning": r["warning"] or 0,
         "alerts": (r["critical"] or 0) + (r["warning"] or 0),
-        "sensors": r["sensors"],
+        "sensors": int(r["sensors"] or 0),
     } for r in rows]
 
 
@@ -558,6 +596,1118 @@ def gateways() -> list[dict]:
             "seqGaps": max(0, expected - r["files"]) if r["files"] else 0,
         })
     return out
+
+
+# The smallest payload the pipeline can act on. Everything else a gateway
+# sends — sequence number, signal strength, supply voltage — is diagnostic.
+UPLOAD_SHAPE = {
+    "gw": "any identifier for the source. Shown in the audit trail.",
+    "ts": "epoch seconds or ISO 8601. When the poll was taken.",
+    "d": [{
+        "t": "the tag, as it appears in the register map. REQUIRED.",
+        "v": "the value. Raw counts for an analogue tag, unless the source "
+             "sends engineering units. REQUIRED.",
+        "q": "OPC quality: 192 good, 64 uncertain, 0 bad. Optional — omitted "
+             "means the source did not report quality, which is recorded as "
+             "such rather than assumed good.",
+    }],
+}
+
+
+def _tag_map_from_db(plant: str | None = None) -> dict[str, TagMapEntry]:
+    """The register map as the pipeline expects it, read from the database.
+
+    Scoped to one plant when the source identifies one.
+
+    Tags are unique per plant, not globally. Most integrators number from 1 at
+    every site, so PH-1001 existing at six plants is normal — and a map keyed
+    on tag alone would keep whichever row happened to be read last and file
+    every reading against the wrong site. Nothing would error; the numbers
+    would simply belong to somebody else's plant.
+
+    Which is why an upload must say where it came from.
+    """
+    rows = q("""
+        SELECT t.tag, t.plant_code, t.sensor_id, t.span_low, t.span_high,
+               t.count_low, t.count_high, t.data_type,
+               s.parameter, s.unit, s.location, s.stage
+        FROM tag_map t JOIN sensors s USING (sensor_id)
+        WHERE t.valid_to IS NULL AND (%s::text IS NULL OR t.plant_code = %s)
+    """, (plant, plant))
+
+    # Ambiguity here is not recoverable: two plants, one tag, no way to know
+    # which was meant. Refuse rather than pick.
+    if plant is None:
+        seen: dict[str, str] = {}
+        clash = sorted({r["tag"] for r in rows
+                        if seen.setdefault(r["tag"], r["plant_code"]) != r["plant_code"]})
+        if clash:
+            raise HTTPException(409,
+                f"{len(clash)} tag(s) exist at more than one plant "
+                f"({', '.join(clash[:5])}). Identify the plant in the upload.")
+
+    return {r["tag"]: TagMapEntry(
+        tag=r["tag"], plant_code=r["plant_code"], sensor_id=r["sensor_id"],
+        parameter=r["parameter"], unit=r["unit"], location=r["location"],
+        stage=r["stage"], span_low=r["span_low"], span_high=r["span_high"],
+        count_low=r["count_low"], count_high=r["count_high"],
+        data_type=r["data_type"],
+    ) for r in rows}
+
+
+@app.get("/upload/shape")
+def upload_shape() -> dict:
+    """What an uploaded file must contain, and an example of it."""
+    return {
+        "required": ["d[].t", "d[].v"],
+        "optional": ["ts", "gw", "d[].q", "seq"],
+        "fields": UPLOAD_SHAPE,
+        "example": {
+            "gw": "LAB-EXPORT", "ts": 1786420800, "seq": 1,
+            "d": [
+                {"t": "PH-1001", "v": 17252, "q": 192},
+                {"t": "TUR-1003", "v": 7609, "q": 192},
+            ],
+        },
+        "note": "Any of the gateway formats the ingest already reads is "
+                "accepted — this is the simplest of them.",
+    }
+
+
+@app.post("/upload/readings")
+async def upload_readings(
+    file: UploadFile = File(...),
+    commit: bool = Query(False),
+    entered_by: str = Query("upload"),
+    plant: str | None = Query(None,
+        description="plant-1 style id. Required when the same tag exists at "
+                    "more than one plant, which is usual."),
+) -> dict:
+    """Load readings from an uploaded file.
+
+    Runs the same parser and the same cleaning rules as an automatic ingest.
+    That is the point: a file somebody uploads is held to identical standards,
+    so an operator cannot get a reading past the checks by routing it through
+    the browser.
+
+    Dry run by default. `commit=false` reports exactly what would happen —
+    what parses, what is rejected and why — without writing anything, because
+    the moment to discover a file is wrong is before it is in the database.
+    """
+    raw = await file.read()
+    if len(raw) > 8 * 1024 * 1024:
+        raise HTTPException(413, "file is larger than 8 MB")
+
+    try:
+        envelopes = parse_file(raw, key=file.filename or "upload.json")
+    except (ParseError, UnknownFormat) as exc:
+        raise HTTPException(400, f"could not read the file: {exc}")
+
+    # The plant comes from the query, or from the gateway that sent the file —
+    # a gateway belongs to exactly one plant, so its id is enough.
+    code = plant_code(plant) if plant else None
+    if code is None and envelopes:
+        gw = envelopes[0].gateway_id
+        found = q("SELECT plant_code FROM gateways WHERE gateway_id = %s", (gw,))
+        if found:
+            code = found[0]["plant_code"]
+
+    tag_map = _tag_map_from_db(code)
+    if not tag_map:
+        raise HTTPException(
+            409, f"no register map entries for {code or 'any plant'} — "
+                 "nothing in this file can be interpreted")
+
+    accepted, rejected = [], []
+    counts: dict[str, int] = {}
+    for env in envelopes:
+        rows, rejects, c = process_envelope(
+            env, tag_map, source_file=f"upload/{file.filename}")
+        accepted.extend(rows)
+        rejected.extend(rejects)
+        for k, v in c.items():
+            counts[k] = counts.get(k, 0) + v
+
+    written = 0
+    batch_id = None
+    if commit and accepted:
+        with psycopg.connect(DSN, row_factory=dict_row) as conn, conn.cursor() as cur:
+            # Dated by the earliest reading in the file rather than by now: the
+            # sample time of an upload is when the plant measured it.
+            earliest = min(r.ts for r in accepted)
+            cur.execute("""
+                INSERT INTO manual_batches (plant_code, sample_ts, entered_by, note)
+                VALUES (%s, %s, %s, %s)
+                RETURNING batch_id
+            """, (code, earliest, entered_by, f"uploaded {file.filename}"))
+            batch_id = cur.fetchone()["batch_id"]
+
+            cur.executemany("""
+                INSERT INTO readings (sensor_id, ts, value, raw_count, quality,
+                                      status, source, source_file, entered_by,
+                                      entered_at, batch_id)
+                VALUES (%s, %s, %s, %s, %s, %s, 'manual', %s, %s, now(), %s)
+                ON CONFLICT (sensor_id, ts) DO NOTHING
+            """, [(r.sensor_id, r.ts, r.value, r.raw_count, r.quality, r.status,
+                   f"upload/{file.filename}", entered_by, batch_id)
+                  for r in accepted])
+            written = cur.rowcount
+            if written == 0:
+                cur.execute("DELETE FROM manual_batches WHERE batch_id = %s",
+                            (batch_id,))
+                batch_id = None
+            cur.executemany("""
+                INSERT INTO latest_readings (sensor_id, ts, value, status, quality)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (sensor_id) DO UPDATE
+                  SET ts = EXCLUDED.ts, value = EXCLUDED.value,
+                      status = EXCLUDED.status, quality = EXCLUDED.quality
+                WHERE latest_readings.ts < EXCLUDED.ts
+            """, [(r.sensor_id, r.ts, r.value, r.status, r.quality)
+                  for r in accepted])
+            conn.commit()
+
+    by_tag = {}
+    for r in rejected:
+        by_tag.setdefault(r.reason, []).append(r.tag)
+
+    return {
+        "filename": file.filename,
+        "batchId": batch_id,
+        "reference": "BS-%04d" % batch_id if batch_id else None,
+        # Stated back, so a file loaded against the wrong site is visible in
+        # the response rather than discovered in a chart weeks later.
+        "plant": code,
+        "committed": commit,
+        "parsed": sum(len(e.readings) for e in envelopes),
+        "accepted": len(accepted),
+        "written": written,
+        "rejected": len(rejected),
+        "reasons": counts,
+        # Which tags failed, so the sender can fix their file rather than
+        # guessing. Capped, because a wholly mis-mapped file would otherwise
+        # return every tag it contains.
+        "rejectedTags": {k: sorted(set(v))[:10] for k, v in by_tag.items()},
+        "preview": [{
+            "sensorId": r.sensor_id, "ts": r.ts.isoformat(),
+            "value": r.value, "status": r.status,
+        } for r in accepted[:10]],
+    }
+
+
+@app.get("/manual/drift")
+def manual_drift(hours: int = Query(72, ge=1, le=8760)) -> list[dict]:
+    """Grab samples compared against the instrument that measures the same thing.
+
+    An operator with a handheld meter checks the online probe. Neither reading
+    means much alone — but the difference between them is the probe's drift,
+    and that is the number a calibration decision actually rests on.
+
+    Matching is by parameter and location, because that is what makes two
+    readings comparable: the same water, at the same point, measured two ways.
+    Comparing a filter probe against a raw-water grab sample would produce a
+    large difference that means nothing.
+
+    The instrument reading used is the one closest in time to the sample, not
+    the latest — a grab taken yesterday must be compared with what the probe
+    said yesterday.
+    """
+    rows = q("""
+        WITH grabs AS (
+            SELECT r.sensor_id, r.ts, r.value, r.entered_by, r.note,
+                   s.parameter, s.location, s.unit, s.plant_code, s.stage
+            FROM readings r
+            JOIN sensors s USING (sensor_id)
+            WHERE r.source = 'manual'
+              AND s.tag LIKE 'GRAB-%%'
+              AND r.ts > now() - make_interval(hours => %s)
+        )
+        SELECT g.ts, g.value AS grab_value, g.entered_by, g.note,
+               g.parameter, g.location, g.unit, g.plant_code, g.stage,
+               p.name AS plant_name,
+               inst.tag        AS instrument_tag,
+               inst.value      AS instrument_value,
+               inst.ts         AS instrument_ts
+        FROM grabs g
+        JOIN plants p ON p.plant_code = g.plant_code
+        LEFT JOIN LATERAL (
+            SELECT s2.tag, r2.value, r2.ts
+            FROM sensors s2
+            JOIN readings r2 USING (sensor_id)
+            WHERE s2.plant_code = g.plant_code
+              AND s2.parameter  = g.parameter
+              AND s2.location   = g.location
+              AND NOT s2.manual_entry
+            ORDER BY abs(extract(epoch FROM (r2.ts - g.ts)))
+            LIMIT 1
+        ) inst ON TRUE
+        ORDER BY g.ts DESC
+        LIMIT 100
+    """, (hours,))
+
+    out = []
+    for r in rows:
+        inst = r["instrument_value"]
+        grab = r["grab_value"]
+        diff = None if inst is None else round(grab - inst, 4)
+        # Relative to the reading, because an absolute difference means
+        # different things at 0.2 NTU and at 20 NTU.
+        pct = (None if inst in (None, 0)
+               else round(abs(grab - inst) / abs(inst) * 100, 1))
+        out.append({
+            "ts": r["ts"].isoformat(),
+            "plantName": r["plant_name"],
+            "parameter": r["parameter"],
+            "location": r["location"],
+            "unit": r["unit"],
+            "grabValue": round(grab, 4),
+            "enteredBy": r["entered_by"],
+            "note": r["note"],
+            "instrumentTag": r["instrument_tag"],
+            "instrumentValue": round(inst, 4) if inst is not None else None,
+            "instrumentTs": r["instrument_ts"].isoformat() if r["instrument_ts"] else None,
+            "difference": diff,
+            "differencePct": pct,
+            # A working guide, not a standard. The real threshold comes from the
+            # instrument's manual and the plant's calibration procedure — this
+            # only says which comparisons are worth a person's attention.
+            "verdict": ("unknown" if pct is None
+                        else "agrees" if pct <= 5
+                        else "check" if pct <= 15
+                        else "calibrate"),
+        })
+    return out
+
+
+@app.get("/insights")
+def insights(days: int = Query(30, ge=1, le=365), plant: str | None = Query(None)) -> dict:
+    """Analytics over sensor data. Observations, not recommendations.
+
+    Every figure here is counted from readings. Nothing is modelled, so nothing
+    can be advised: telling a plant to change a coagulant dose needs a process
+    model, and a dashboard that guesses at one is worse than one that stays
+    quiet.
+    """
+    code = plant_code(plant) if plant else None
+
+    # Breach rate by parameter and stage. Stage matters more than parameter:
+    # 20 NTU is normal raw water and a failure in final water, so pooling them
+    # would hide the only one that counts.
+    params = q("""
+        SELECT s.parameter, s.stage,
+               sum(h.n)          AS samples,
+               sum(h.n_critical) AS critical,
+               sum(h.n_warning)  AS warning
+        FROM readings_hourly h
+        JOIN sensors s USING (sensor_id)
+        WHERE h.bucket > now() - make_interval(days => %s)
+          AND (%s::text IS NULL OR s.plant_code = %s)
+        GROUP BY 1, 2
+        HAVING sum(h.n) >= 20
+        ORDER BY (sum(h.n_critical) + sum(h.n_warning))::float / sum(h.n) DESC,
+                 sum(h.n_critical) DESC
+        LIMIT 20
+    """, (days, code, code))
+
+    estate = {(r["parameter"], r["stage"]): r for r in q("""
+        SELECT parameter, stage, count(*) AS sensors,
+               count(DISTINCT plant_code) AS plants
+        FROM sensors
+        WHERE %s::text IS NULL OR plant_code = %s
+        GROUP BY 1, 2
+    """, (code, code))}
+
+    # Individual instruments, so a single bad probe is not averaged away by the
+    # five beside it reading correctly.
+    sensors = q("""
+        SELECT s.sensor_id, s.tag, s.parameter, s.location, s.stage,
+               p.name AS plant_name, s.plant_code,
+               sum(h.n)          AS samples,
+               sum(h.n_critical) AS critical,
+               sum(h.n_warning)  AS warning,
+               round(avg(h.avg_value)::numeric, 3) AS avg_value,
+               s.unit, b.warn_min, b.warn_max, b.crit_min, b.crit_max
+        FROM readings_hourly h
+        JOIN sensors s USING (sensor_id)
+        JOIN plants  p USING (plant_code)
+        LEFT JOIN threshold_bands b
+               ON b.parameter = s.parameter AND b.stage = s.stage
+        WHERE h.bucket > now() - make_interval(days => %s)
+          AND (%s::text IS NULL OR s.plant_code = %s)
+        GROUP BY s.sensor_id, s.tag, s.parameter, s.location, s.stage,
+                 p.name, s.plant_code, s.unit,
+                 b.warn_min, b.warn_max, b.crit_min, b.crit_max
+        HAVING sum(h.n) >= 50 AND (sum(h.n_critical) + sum(h.n_warning)) > 0
+        ORDER BY (sum(h.n_critical) + sum(h.n_warning))::float / sum(h.n) DESC,
+                 sum(h.n) DESC
+        LIMIT 12
+    """, (days, code, code))
+
+    # Configured but silent. An instrument nobody is receiving is invisible on
+    # every other screen — it simply has no tile — so it is worth counting in
+    # one place.
+    cover = q("""
+        SELECT count(*) FILTER (WHERE l.ts IS NULL)                       AS never,
+               count(*) FILTER (WHERE l.ts < now() - interval '24 hours') AS stopped,
+               count(*)                                                   AS total
+        FROM sensors s
+        LEFT JOIN latest_readings l USING (sensor_id)
+        WHERE NOT s.manual_entry AND (%s::text IS NULL OR s.plant_code = %s)
+    """, (code, code))[0]
+
+    by_plant = q("""
+        WITH silent AS (
+            SELECT s.plant_code,
+                   count(*) FILTER (WHERE l.ts IS NULL)                       AS never,
+                   count(*) FILTER (WHERE l.ts < now() - interval '24 hours') AS stopped,
+                   count(*)                                                   AS configured
+            FROM sensors s
+            LEFT JOIN latest_readings l USING (sensor_id)
+            WHERE NOT s.manual_entry AND (%s::text IS NULL OR s.plant_code = %s)
+            GROUP BY 1
+        ),
+        gw AS (
+            -- processed_files records the gateway that sent each file, so the
+            -- delivery record is a direct join rather than a guess at the key.
+            SELECT g.plant_code,
+                   min(g.gateway_id)                 AS gateway_id,
+                   count(pf.object_key)              AS files,
+                   max(pf.processed_at)              AS last_file
+            FROM gateways g
+            LEFT JOIN processed_files pf USING (gateway_id)
+            GROUP BY g.plant_code
+        )
+        SELECT s.plant_code, p.name AS plant_name, s.never, s.stopped, s.configured,
+               gw.gateway_id, gw.files, gw.last_file
+        FROM silent s
+        JOIN plants p USING (plant_code)
+        LEFT JOIN gw USING (plant_code)
+        WHERE s.never + s.stopped > 0
+        ORDER BY (s.never + s.stopped) DESC
+    """, (code, code))
+
+    silent = q("""
+        SELECT s.sensor_id, s.tag, s.parameter, s.location, s.plant_code,
+               p.name AS plant_name, l.ts AS last_seen
+        FROM sensors s
+        JOIN plants p USING (plant_code)
+        LEFT JOIN latest_readings l USING (sensor_id)
+        WHERE NOT s.manual_entry
+          AND (l.ts IS NULL OR l.ts < now() - interval '24 hours')
+          AND (%s::text IS NULL OR s.plant_code = %s)
+        ORDER BY l.ts NULLS FIRST
+        LIMIT 12
+    """, (code, code))
+
+    # A reading that never moves within an hour, hour after hour, is the
+    # signature of a held value: the probe has failed but the PLC keeps
+    # publishing its last number, so nothing looks wrong anywhere else.
+    flat = q("""
+        SELECT s.sensor_id, s.tag, s.parameter, s.location, s.unit, s.plant_code,
+               p.name AS plant_name,
+               count(*)                            AS flat_hours,
+               round(max(h.avg_value)::numeric, 3) AS stuck_at
+        FROM readings_hourly h
+        JOIN sensors s USING (sensor_id)
+        JOIN plants  p USING (plant_code)
+        WHERE h.bucket > now() - make_interval(days => %s)
+          AND h.min_value = h.max_value AND h.n > 1
+          AND (%s::text IS NULL OR s.plant_code = %s)
+        GROUP BY s.sensor_id, s.tag, s.parameter, s.location, s.unit,
+                 s.plant_code, p.name
+        HAVING count(*) >= 6
+        ORDER BY count(*) DESC
+        LIMIT 12
+    """, (days, code, code))
+
+    # How much the plant actually removes. The one number a treatment works
+    # exists to produce: what came in against what went out, per parameter.
+    # Only meaningful where a parameter is measured at both ends.
+    removal = q("""
+        WITH stage_avg AS (
+            SELECT s.plant_code, p.name AS plant_name, s.parameter, s.stage, s.unit,
+                   avg(h.avg_value) AS avg_value, sum(h.n) AS samples
+            FROM readings_hourly h
+            JOIN sensors s USING (sensor_id)
+            JOIN plants  p USING (plant_code)
+            WHERE h.bucket > now() - make_interval(days => %s)
+              AND s.stage IN ('raw', 'final')
+              -- Removal only means something for a contaminant the works is
+              -- there to take out. pH is corrected, chlorine is added, and
+              -- flow and pressure are not removed at all — a "removal
+              -- efficiency" for any of those is a category error.
+              AND s.parameter IN ('turbidity', 'TSS', 'COD', 'BOD', 'coliform',
+                                  'iron', 'manganese', 'hardness')
+              AND (%s::text IS NULL OR s.plant_code = %s)
+            GROUP BY 1, 2, 3, 4, 5
+        )
+        SELECT r.plant_code, r.plant_name, r.parameter, r.unit,
+               r.avg_value  AS raw_avg,
+               f.avg_value  AS final_avg,
+               least(r.samples, f.samples) AS samples
+        FROM stage_avg r
+        JOIN stage_avg f
+          ON f.plant_code = r.plant_code AND f.parameter = r.parameter
+         AND f.stage = 'final'
+        WHERE r.stage = 'raw' AND r.avg_value <> 0
+        ORDER BY r.plant_name, r.parameter
+    """, (days, code, code))
+
+    # Why readings were discarded on the way in — a property of the
+    # instruments and the gateway, not of the water.
+    rejects = q("""
+        SELECT reason, count(*) AS n
+        FROM rejected_readings
+        WHERE ts > now() - make_interval(days => %s)
+        GROUP BY 1 ORDER BY 2 DESC
+    """, (days,))
+
+    def rate(c, w, n) -> float:
+        c, w, n = int(c or 0), int(w or 0), int(n or 0)
+        return round(100.0 * (c + w) / n, 2) if n else 0.0
+
+    return {
+        "days": days,
+        "parameters": [{
+            "parameter": r["parameter"], "stage": r["stage"],
+            "samples": int(r["samples"] or 0), "critical": int(r["critical"] or 0),
+            "warning": int(r["warning"] or 0),
+            "sensors": int(estate.get((r["parameter"], r["stage"]), {}).get("sensors", 0)),
+            "plants": int(estate.get((r["parameter"], r["stage"]), {}).get("plants", 0)),
+            "breachPct": rate(r["critical"], r["warning"], r["samples"]),
+        } for r in params],
+        "sensors": [{
+            "id": r["sensor_id"], "tag": r["tag"], "parameter": r["parameter"],
+            "location": r["location"], "stage": r["stage"], "unit": r["unit"],
+            "plantId": plant_id(r["plant_code"]), "plantName": r["plant_name"],
+            "samples": int(r["samples"] or 0), "critical": int(r["critical"] or 0),
+            "warning": int(r["warning"] or 0), "avgValue": float(r["avg_value"]),
+            # The limit it broke, so the screen can say "22.5 against a limit
+            # of 5" rather than a percentage with nothing to compare against.
+            "warnMin": r["warn_min"], "warnMax": r["warn_max"],
+            "critMin": r["crit_min"], "critMax": r["crit_max"],
+            "breachPct": rate(r["critical"], r["warning"], r["samples"]),
+        } for r in sensors],
+        "coverage": {
+            "total": cover["total"], "never": cover["never"],
+            "stopped": cover["stopped"],
+            "reporting": cover["total"] - cover["never"] - cover["stopped"],
+            # One entry per plant, because a whole site going quiet is one
+            # fact rather than forty.
+            "byPlant": [{
+                "plantId": plant_id(r["plant_code"]), "plantName": r["plant_name"],
+                "never": int(r["never"] or 0), "stopped": int(r["stopped"] or 0),
+                "configured": int(r["configured"] or 0),
+                "gatewayId": r["gateway_id"],
+                "gatewayFiles": int(r["files"] or 0),
+                "gatewayLastFile": r["last_file"].isoformat() if r["last_file"] else None,
+            } for r in by_plant],
+            "examples": [{
+                "id": r["sensor_id"], "tag": r["tag"], "parameter": r["parameter"],
+                "location": r["location"], "plantName": r["plant_name"],
+                "plantId": plant_id(r["plant_code"]),
+                "lastSeen": r["last_seen"].isoformat() if r["last_seen"] else None,
+            } for r in silent],
+        },
+        "flatlined": [{
+            "id": r["sensor_id"], "tag": r["tag"], "parameter": r["parameter"],
+            "location": r["location"], "unit": r["unit"],
+            "plantName": r["plant_name"], "plantId": plant_id(r["plant_code"]),
+            "flatHours": int(r["flat_hours"]), "stuckAt": float(r["stuck_at"] or 0),
+        } for r in flat],
+        "removal": [{
+            "plantId": plant_id(r["plant_code"]), "plantName": r["plant_name"],
+            "parameter": r["parameter"], "unit": r["unit"],
+            "rawAvg": round(float(r["raw_avg"]), 3),
+            "finalAvg": round(float(r["final_avg"]), 3),
+            # Negative means the parameter rose across the works. For turbidity
+            # that is a failure; for chlorine it is dosing, which is the point.
+            "removalPct": round(
+                (float(r["raw_avg"]) - float(r["final_avg"])) / float(r["raw_avg"]) * 100, 1),
+            "samples": int(r["samples"] or 0),
+        } for r in removal],
+        "rejected": [{"reason": r["reason"], "count": int(r["n"])} for r in rejects],
+    }
+
+
+@app.get("/insights/acknowledgements/history")
+def acknowledgement_history(limit: int = Query(50, ge=1, le=200)) -> list[dict]:
+    """Every acknowledgement, newest first.
+
+    The only history this screen can honestly show. Nothing was applied to the
+    plant — there is no write path — so what happened is that observations were
+    raised and people said they had read them.
+
+    Insight ids carry their own meaning ("breach:plant-1-sensor-5"), so the
+    instrument is resolved here rather than leaving the screen to parse strings.
+    """
+    rows = q("""
+        SELECT a.ack_id, a.insight_id, a.acknowledged_by, a.acknowledged_at, a.note,
+               split_part(a.insight_id, ':', 1) AS kind,
+               s.parameter, s.location, p.name AS plant_name
+        FROM insight_acknowledgements a
+        LEFT JOIN sensors s ON s.sensor_id = split_part(a.insight_id, ':', 2)
+        LEFT JOIN plants  p ON p.plant_code = s.plant_code
+        ORDER BY a.acknowledged_at DESC
+        LIMIT %s
+    """, (limit,))
+    return [{
+        "id": r["ack_id"],
+        "insightId": r["insight_id"],
+        "kind": r["kind"],
+        # A plant-wide coverage observation has no sensor, so it resolves to
+        # nothing — say what it was rather than showing a blank row.
+        "subject": (f"{r['parameter']} at {r['location']}" if r["parameter"]
+                    else r["insight_id"].split(":", 1)[-1]),
+        "plantName": r["plant_name"],
+        "acknowledgedBy": r["acknowledged_by"],
+        "acknowledgedAt": r["acknowledged_at"].isoformat(),
+        "note": r["note"],
+    } for r in rows]
+
+
+@app.get("/insights/acknowledgements")
+def insight_acknowledgements() -> dict:
+    """Current acknowledgement state, keyed by insight id.
+
+    The latest row per insight. Earlier ones are kept — an insight raised again
+    on a later shift is acknowledged again, and who saw it the first time is
+    still worth having.
+    """
+    rows = q("""
+        SELECT DISTINCT ON (insight_id)
+               insight_id, acknowledged_by, acknowledged_at, note
+        FROM insight_acknowledgements
+        ORDER BY insight_id, acknowledged_at DESC
+    """)
+    return {r["insight_id"]: {
+        "acknowledgedBy": r["acknowledged_by"],
+        "acknowledgedAt": r["acknowledged_at"].isoformat(),
+        "note": r["note"],
+    } for r in rows}
+
+
+@app.post("/insights/acknowledgements", status_code=201)
+def acknowledge_insight(payload: dict = Body(...)) -> dict:
+    """Record that somebody has seen an insight.
+
+    An acknowledgement changes nothing at the plant — there is no write path,
+    and this deliberately does not pretend to be one. It records that a person
+    read the observation, which is the part a shift handover actually needs.
+    """
+    insight_id = (payload.get("insightId") or "").strip()
+    by = (payload.get("acknowledgedBy") or "").strip()
+    note = (payload.get("note") or "").strip() or None
+
+    if not insight_id or not by:
+        raise HTTPException(400, "insightId and acknowledgedBy are required")
+    if len(insight_id) > 200 or len(by) > 200:
+        raise HTTPException(400, "insightId and acknowledgedBy must be under 200 characters")
+
+    with psycopg.connect(DSN, row_factory=dict_row) as conn, conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO insight_acknowledgements (insight_id, acknowledged_by, note)
+            VALUES (%s, %s, %s)
+            RETURNING acknowledged_at
+        """, (insight_id, by, note))
+        at = cur.fetchone()["acknowledged_at"]
+        conn.commit()
+
+    return {
+        "insightId": insight_id,
+        "acknowledgedBy": by,
+        "acknowledgedAt": at.isoformat(),
+        "note": note,
+    }
+
+
+@app.get("/manual/sensors")
+def manual_sensors(plant: str | None = Query(None)) -> list[dict]:
+    """Parameters that accept a hand-entered reading.
+
+    Lab results, mostly. They have no tag on any gateway, so the only way a
+    figure arrives is somebody typing it.
+    """
+    code = plant_code(plant) if plant else None
+    rows = q("""
+        SELECT s.sensor_id, s.tag, s.parameter, s.unit, s.location, s.stage,
+               s.plant_code, p.name AS plant_name,
+               b.warn_min, b.warn_max, b.crit_min, b.crit_max,
+               l.ts AS last_ts, l.value AS last_value
+        FROM sensors s
+        JOIN plants p USING (plant_code)
+        LEFT JOIN threshold_bands b
+               ON b.parameter = s.parameter AND b.stage = s.stage
+        LEFT JOIN latest_readings l USING (sensor_id)
+        WHERE s.manual_entry AND (%s::text IS NULL OR s.plant_code = %s)
+        ORDER BY p.name, s.parameter, s.location
+    """, (code, code))
+    return [{
+        "id": r["sensor_id"], "tag": r["tag"], "parameter": r["parameter"],
+        "unit": r["unit"], "location": r["location"], "stage": r["stage"],
+        "plantId": plant_id(r["plant_code"]), "plantName": r["plant_name"],
+        "warnMin": r["warn_min"], "warnMax": r["warn_max"],
+        "critMin": r["crit_min"], "critMax": r["crit_max"],
+        "lastReading": r["last_ts"].isoformat() if r["last_ts"] else None,
+        "lastValue": round(r["last_value"], 4) if r["last_value"] is not None else None,
+    } for r in rows]
+
+
+@app.post("/manual/readings", status_code=201)
+def create_manual_reading(payload: dict = Body(...)) -> dict:
+    """Record a reading somebody measured by hand.
+
+    Held to the same rules as an automatic one. A lab result is not exempt from
+    the plausibility check or the alarm band — if anything it needs them more,
+    because a transposed digit in a typed number has nothing upstream to catch
+    it.
+
+    Rejects rather than overwrites when a reading already exists for that
+    sensor and time. Correcting a figure is a deliberate act, and should not
+    happen by somebody submitting a form twice.
+    """
+    sensor_id = (payload.get("sensorId") or "").strip()
+    entered_by = (payload.get("enteredBy") or "").strip()
+    ts_text = payload.get("ts")
+    note = (payload.get("note") or "").strip() or None
+
+    if not sensor_id or not entered_by:
+        raise HTTPException(400, "sensorId and enteredBy are required")
+    try:
+        value = float(payload.get("value"))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "value must be a number")
+    if value != value or value in (float("inf"), float("-inf")):
+        raise HTTPException(400, "value must be finite")
+
+    try:
+        ts = (datetime.fromisoformat(str(ts_text).replace("Z", "+00:00"))
+              if ts_text
+              # Rounded to the minute. At microsecond precision a
+              # double-clicked form produces two readings seconds apart rather
+              # than colliding on the primary key — and nobody records a lab
+              # sample to the microsecond anyway.
+              else datetime.now(timezone.utc).replace(second=0, microsecond=0))
+    except ValueError:
+        raise HTTPException(400, "ts is not a valid timestamp")
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+
+    # A sample cannot have been taken in the future. Usually a mistyped year.
+    if ts > datetime.now(timezone.utc) + timedelta(minutes=5):
+        raise HTTPException(400, "the sample time is in the future")
+
+    rows = q("""
+        SELECT s.parameter, s.unit, s.stage, s.manual_entry,
+               b.warn_min, b.warn_max, b.crit_min, b.crit_max
+        FROM sensors s
+        LEFT JOIN threshold_bands b
+               ON b.parameter = s.parameter AND b.stage = s.stage
+        WHERE s.sensor_id = %s
+    """, (sensor_id,))
+    if not rows:
+        raise HTTPException(404, "no such sensor")
+    r = rows[0]
+    if not r["manual_entry"]:
+        # An instrument tag receives its readings from the gateway. Letting a
+        # typed figure land among them would make the trend untrustworthy and
+        # the discrepancy invisible.
+        raise HTTPException(409, "that is an instrument tag — it does not accept manual entry")
+
+    # Classified from the same bands as an automatic reading.
+    if r["crit_min"] is None:
+        status = "normal"
+    elif value < r["crit_min"] or value > r["crit_max"]:
+        status = "critical"
+    elif value < r["warn_min"] or value > r["warn_max"]:
+        status = "warning"
+    else:
+        status = "normal"
+
+    with psycopg.connect(DSN, row_factory=dict_row) as conn, conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO readings (sensor_id, ts, value, status, source,
+                                  entered_by, entered_at, note, quality)
+            VALUES (%s, %s, %s, %s, 'manual', %s, now(), %s, 192)
+            ON CONFLICT (sensor_id, ts) DO NOTHING
+            RETURNING ts
+        """, (sensor_id, ts, round(value, 4), status, entered_by, note))
+        if cur.fetchone() is None:
+            raise HTTPException(409, "a reading already exists for that sensor and time")
+
+        # Keep the dashboard's current-value table in step, but only when this
+        # is newer — back-filling last week's sample must not overwrite today's.
+        cur.execute("""
+            INSERT INTO latest_readings (sensor_id, ts, value, status, quality)
+            VALUES (%s, %s, %s, %s, 192)
+            ON CONFLICT (sensor_id) DO UPDATE
+              SET ts = EXCLUDED.ts, value = EXCLUDED.value, status = EXCLUDED.status
+            WHERE latest_readings.ts < EXCLUDED.ts
+        """, (sensor_id, ts, round(value, 4), status))
+        conn.commit()
+
+    return {
+        "sensorId": sensor_id, "ts": ts.isoformat(), "value": round(value, 4),
+        "status": status, "parameter": r["parameter"], "unit": r["unit"],
+        "enteredBy": entered_by, "note": note,
+    }
+
+
+@app.post("/manual/readings/batch", status_code=201)
+def create_manual_batch(payload: dict = Body(...)) -> dict:
+    """Record a round of samples: one sample time, many parameters.
+
+    A technician draws one sample and measures a dozen things from it. Those
+    readings share a time because they describe the same water, and entering
+    them one at a time would not only be tedious — it would give each one a
+    slightly different timestamp, so a chart could not line them up.
+
+    Reported per row rather than all-or-nothing. If one figure is a duplicate
+    the other eleven are still recorded, because discarding a round of typing
+    over one bad cell is how people stop using a form.
+    """
+    entered_by = (payload.get("enteredBy") or "").strip()
+    note = (payload.get("note") or "").strip() or None
+    rows_in = payload.get("readings") or []
+
+    if not entered_by:
+        raise HTTPException(400, "enteredBy is required")
+    if not isinstance(rows_in, list) or not rows_in:
+        raise HTTPException(400, "readings must be a non-empty list")
+    if len(rows_in) > 200:
+        raise HTTPException(400, "no more than 200 readings in one submission")
+
+    ts_text = payload.get("ts")
+    try:
+        ts = (datetime.fromisoformat(str(ts_text).replace("Z", "+00:00"))
+              if ts_text else datetime.now(timezone.utc))
+    except ValueError:
+        raise HTTPException(400, "ts is not a valid timestamp")
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    if ts > datetime.now(timezone.utc) + timedelta(minutes=5):
+        raise HTTPException(400, "the sample time is in the future")
+    # To the minute, so submitting the same round twice collides rather than
+    # landing a second copy microseconds away from the first.
+    ts = ts.replace(second=0, microsecond=0)
+
+    wanted = [str(r.get("sensorId") or "").strip() for r in rows_in]
+    known = {r["sensor_id"]: r for r in q("""
+        SELECT s.sensor_id, s.parameter, s.unit, s.location, s.manual_entry,
+               b.warn_min, b.warn_max, b.crit_min, b.crit_max
+        FROM sensors s
+        LEFT JOIN threshold_bands b
+               ON b.parameter = s.parameter AND b.stage = s.stage
+        WHERE s.sensor_id = ANY(%s)
+    """, (wanted,))}
+
+    results, to_write = [], []
+    for raw in rows_in:
+        sid = str(raw.get("sensorId") or "").strip()
+        meta = known.get(sid)
+        try:
+            value = float(raw.get("value"))
+            if value != value or value in (float("inf"), float("-inf")):
+                raise ValueError
+        except (TypeError, ValueError):
+            results.append({"sensorId": sid, "ok": False, "error": "not a number"})
+            continue
+        if meta is None:
+            results.append({"sensorId": sid, "ok": False, "error": "no such sensor"})
+            continue
+        if not meta["manual_entry"]:
+            results.append({"sensorId": sid, "ok": False,
+                            "error": "instrument tag — does not accept manual entry"})
+            continue
+
+        if meta["crit_min"] is None:
+            status = "normal"
+        elif value < meta["crit_min"] or value > meta["crit_max"]:
+            status = "critical"
+        elif value < meta["warn_min"] or value > meta["warn_max"]:
+            status = "warning"
+        else:
+            status = "normal"
+
+        value = round(value, 4)
+        to_write.append((sid, value, status))
+        results.append({"sensorId": sid, "ok": True, "value": value,
+                        "status": status, "parameter": meta["parameter"],
+                        "unit": meta["unit"], "location": meta["location"]})
+
+    written = 0
+    batch_id = None
+    if to_write:
+        # The plant the round was taken at. Every sensor in a submission
+        # belongs to one plant — the form only offers one — so the first is
+        # authoritative.
+        first = q("SELECT plant_code FROM sensors WHERE sensor_id = %s",
+                  (to_write[0][0],))
+        plant = first[0]["plant_code"] if first else None
+
+        with psycopg.connect(DSN, row_factory=dict_row) as conn, conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO manual_batches (plant_code, sample_ts, entered_by, note)
+                VALUES (%s, %s, %s, %s)
+                RETURNING batch_id
+            """, (plant, ts, entered_by, note))
+            batch_id = cur.fetchone()["batch_id"]
+
+            for sid, value, status in to_write:
+                cur.execute("""
+                    INSERT INTO readings (sensor_id, ts, value, status, source,
+                                          entered_by, entered_at, note, quality,
+                                          batch_id)
+                    VALUES (%s, %s, %s, %s, 'manual', %s, now(), %s, 192, %s)
+                    ON CONFLICT (sensor_id, ts) DO NOTHING
+                    RETURNING ts
+                """, (sid, ts, value, status, entered_by, note, batch_id))
+                if cur.fetchone() is None:
+                    for r in results:
+                        if r["sensorId"] == sid and r.get("ok"):
+                            r["ok"] = False
+                            r["error"] = "already recorded at that time"
+                    continue
+                written += 1
+                cur.execute("""
+                    INSERT INTO latest_readings (sensor_id, ts, value, status, quality)
+                    VALUES (%s, %s, %s, %s, 192)
+                    ON CONFLICT (sensor_id) DO UPDATE
+                      SET ts = EXCLUDED.ts, value = EXCLUDED.value,
+                          status = EXCLUDED.status
+                    WHERE latest_readings.ts < EXCLUDED.ts
+                """, (sid, ts, value, status))
+            if written == 0:
+                cur.execute("DELETE FROM manual_batches WHERE batch_id = %s",
+                            (batch_id,))
+                batch_id = None
+            conn.commit()
+
+    return {
+        "batchId": batch_id,
+        "ts": ts.isoformat(),
+        "submitted": len(rows_in),
+        "recorded": written,
+        "failed": sum(1 for r in results if not r["ok"]),
+        "results": results,
+    }
+
+
+@app.get("/manual/batches")
+def manual_batches(limit: int = Query(30, ge=1, le=200)) -> list[dict]:
+    """Bench sheet submissions, newest first.
+
+    One row per round rather than per reading. A technician who entered twelve
+    results entered them once, and a log that lists them twelve times makes it
+    look like twelve separate acts.
+    """
+    rows = q("""
+        SELECT b.batch_id, b.plant_code, p.name AS plant_name, b.sample_ts,
+               b.entered_by, b.entered_at, b.note,
+               count(r.*)                                        AS readings,
+               count(*) FILTER (WHERE r.status = 'critical')      AS critical,
+               count(*) FILTER (WHERE r.status = 'warning')       AS warning,
+               (SELECT count(*) FROM manual_reading_edits e
+                 WHERE e.batch_id = b.batch_id)                   AS edits,
+               (SELECT e.edited_by FROM manual_reading_edits e
+                 WHERE e.batch_id = b.batch_id
+                 ORDER BY e.edited_at DESC LIMIT 1)               AS last_edited_by,
+               (SELECT e.edited_at FROM manual_reading_edits e
+                 WHERE e.batch_id = b.batch_id
+                 ORDER BY e.edited_at DESC LIMIT 1)               AS last_edited_at
+        FROM manual_batches b
+        JOIN plants p USING (plant_code)
+        LEFT JOIN readings r USING (batch_id)
+        GROUP BY b.batch_id, b.plant_code, p.name, b.sample_ts,
+                 b.entered_by, b.entered_at, b.note
+        ORDER BY b.entered_at DESC
+        LIMIT %s
+    """, (limit,))
+    if not rows:
+        return []
+
+    ids = [r["batch_id"] for r in rows]
+    detail = q("""
+        SELECT r.batch_id, r.sensor_id, s.parameter, s.location, s.unit,
+               r.value, r.status
+        FROM readings r
+        JOIN sensors s USING (sensor_id)
+        WHERE r.batch_id = ANY(%s)
+        ORDER BY s.location, s.parameter
+    """, (ids,))
+    by_batch: dict[int, list[dict]] = {}
+    for d in detail:
+        by_batch.setdefault(d["batch_id"], []).append({
+            "sensorId": d["sensor_id"], "parameter": d["parameter"],
+            "location": d["location"], "unit": d["unit"],
+            "value": round(d["value"], 4), "status": d["status"],
+        })
+
+    return [{
+        "id": r["batch_id"],
+        # A reference somebody can read out over a radio.
+        "reference": "BS-%04d" % r["batch_id"],
+        "plantId": plant_id(r["plant_code"]), "plantName": r["plant_name"],
+        "sampleTs": r["sample_ts"].isoformat(),
+        "enteredBy": r["entered_by"],
+        "enteredAt": r["entered_at"].isoformat(),
+        "note": r["note"],
+        "readings": int(r["readings"] or 0),
+        "critical": int(r["critical"] or 0),
+        "warning": int(r["warning"] or 0),
+        "edits": int(r["edits"] or 0),
+        "lastEditedBy": r["last_edited_by"],
+        "lastEditedAt": (r["last_edited_at"].isoformat()
+                         if r["last_edited_at"] else None),
+        "values": by_batch.get(r["batch_id"], []),
+    } for r in rows]
+
+
+@app.patch("/manual/batches/{batch_id}")
+def edit_manual_batch(batch_id: int, payload: dict = Body(...)) -> dict:
+    """Correct values in a submission.
+
+    A mistyped lab result has to be fixable — the alternative is a wrong figure
+    in a compliance record forever. But every change is written to
+    manual_reading_edits first: a value that can be altered without a trace is
+    worse than one that cannot be altered at all.
+
+    Corrections are re-graded against the same bands, so fixing a digit also
+    fixes whether it counts as a breach.
+    """
+    edited_by = (payload.get("editedBy") or "").strip()
+    reason = (payload.get("reason") or "").strip() or None
+    changes = payload.get("readings") or []
+
+    if not edited_by:
+        raise HTTPException(400, "editedBy is required")
+    if not isinstance(changes, list) or not changes:
+        raise HTTPException(400, "readings must be a non-empty list")
+
+    batch = q("SELECT batch_id, sample_ts FROM manual_batches WHERE batch_id = %s",
+              (batch_id,))
+    if not batch:
+        raise HTTPException(404, "no such submission")
+    ts = batch[0]["sample_ts"]
+
+    wanted = [str(c.get("sensorId") or "").strip() for c in changes]
+    meta = {r["sensor_id"]: r for r in q("""
+        SELECT s.sensor_id, s.parameter, s.unit,
+               b.warn_min, b.warn_max, b.crit_min, b.crit_max
+        FROM sensors s
+        LEFT JOIN threshold_bands b
+               ON b.parameter = s.parameter AND b.stage = s.stage
+        WHERE s.sensor_id = ANY(%s)
+    """, (wanted,))}
+
+    results, updated = [], 0
+    with psycopg.connect(DSN, row_factory=dict_row) as conn, conn.cursor() as cur:
+        for c in changes:
+            sid = str(c.get("sensorId") or "").strip()
+            m = meta.get(sid)
+            if m is None:
+                results.append({"sensorId": sid, "ok": False, "error": "no such sensor"})
+                continue
+            try:
+                value = round(float(c.get("value")), 4)
+                if value != value or value in (float("inf"), float("-inf")):
+                    raise ValueError
+            except (TypeError, ValueError):
+                results.append({"sensorId": sid, "ok": False, "error": "not a number"})
+                continue
+
+            cur.execute("""SELECT value FROM readings
+                           WHERE batch_id = %s AND sensor_id = %s AND ts = %s""",
+                        (batch_id, sid, ts))
+            row = cur.fetchone()
+            if row is None:
+                results.append({"sensorId": sid, "ok": False,
+                                "error": "not part of this submission"})
+                continue
+            old = row["value"]
+            if old == value:
+                results.append({"sensorId": sid, "ok": True, "value": value,
+                                "changed": False})
+                continue
+
+            if m["crit_min"] is None:
+                status = "normal"
+            elif value < m["crit_min"] or value > m["crit_max"]:
+                status = "critical"
+            elif value < m["warn_min"] or value > m["warn_max"]:
+                status = "warning"
+            else:
+                status = "normal"
+
+            # The trail is written before the value moves, so a failure part
+            # way through leaves a record of intent rather than a silent gap.
+            cur.execute("""
+                INSERT INTO manual_reading_edits
+                    (batch_id, sensor_id, ts, old_value, new_value, edited_by, reason)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (batch_id, sid, ts, old, value, edited_by, reason))
+            try:
+                cur.execute("""UPDATE readings SET value = %s, status = %s
+                               WHERE batch_id = %s AND sensor_id = %s AND ts = %s""",
+                            (value, status, batch_id, sid, ts))
+            except psycopg.errors.Error as exc:
+                conn.rollback()
+                raise HTTPException(409,
+                    "this reading is in compressed storage and cannot be corrected "
+                    "in place — readings are compressed after 30 days") from exc
+            cur.execute("""UPDATE latest_readings SET value = %s, status = %s
+                           WHERE sensor_id = %s AND ts = %s""", (value, status, sid, ts))
+            updated += 1
+            results.append({"sensorId": sid, "ok": True, "value": value,
+                            "status": status, "changed": True, "previous": old,
+                            "parameter": m["parameter"], "unit": m["unit"]})
+        conn.commit()
+
+    return {"batchId": batch_id, "updated": updated, "results": results}
+
+
+@app.get("/manual/batches/{batch_id}/edits")
+def manual_batch_edits(batch_id: int) -> list[dict]:
+    """Every correction made to a submission, oldest first."""
+    rows = q("""
+        SELECT e.sensor_id, s.parameter, s.location, s.unit,
+               e.old_value, e.new_value, e.edited_by, e.edited_at, e.reason
+        FROM manual_reading_edits e
+        JOIN sensors s USING (sensor_id)
+        WHERE e.batch_id = %s
+        ORDER BY e.edited_at
+    """, (batch_id,))
+    return [{
+        "sensorId": r["sensor_id"], "parameter": r["parameter"],
+        "location": r["location"], "unit": r["unit"],
+        "from": r["old_value"], "to": r["new_value"],
+        "editedBy": r["edited_by"], "editedAt": r["edited_at"].isoformat(),
+        "reason": r["reason"],
+    } for r in rows]
+
+
+@app.get("/manual/readings")
+def manual_readings(limit: int = Query(50, ge=1, le=200)) -> list[dict]:
+    """Recently entered readings, newest first — the entry log."""
+    rows = q("""
+        SELECT r.sensor_id, s.tag, s.parameter, s.unit, s.location,
+               p.name AS plant_name, r.ts, r.value, r.status,
+               r.entered_by, r.entered_at, r.note
+        FROM readings r
+        JOIN sensors s USING (sensor_id)
+        JOIN plants  p USING (plant_code)
+        WHERE r.source = 'manual'
+        ORDER BY r.entered_at DESC NULLS LAST
+        LIMIT %s
+    """, (limit,))
+    return [{
+        "sensorId": r["sensor_id"], "tag": r["tag"], "parameter": r["parameter"],
+        "unit": r["unit"], "location": r["location"], "plantName": r["plant_name"],
+        "ts": r["ts"].isoformat(), "value": round(r["value"], 4),
+        "status": r["status"], "enteredBy": r["entered_by"],
+        "enteredAt": r["entered_at"].isoformat() if r["entered_at"] else None,
+        "note": r["note"],
+    } for r in rows]
 
 
 @app.get("/users")
