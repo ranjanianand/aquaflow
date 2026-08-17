@@ -53,6 +53,16 @@ const sensorTypeLabels: Record<SensorType, string> = {
   start_count: 'Starts',
   valve_open: 'Valve Open',
   valve_closed: 'Valve Closed',
+  COD: 'COD',
+  BOD: 'BOD',
+  TSS: 'TSS',
+  coliform: 'Coliform',
+  hardness: 'Hardness',
+  alkalinity: 'Alkalinity',
+  iron: 'Iron',
+  manganese: 'Manganese',
+  fluoride: 'Fluoride',
+  nitrate: 'Nitrate',
 };
 
 function SensorCard({ sensor }: { sensor: Sensor }) {

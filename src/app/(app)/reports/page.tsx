@@ -110,62 +110,7 @@ const reportTemplates: ReportTemplate[] = [
   },
 ];
 
-const recentReports: GeneratedReport[] = [
-  {
-    id: 'rep-1',
-    name: 'Daily Operations Summary - Dec 10, 2024',
-    generatedAt: new Date(Date.now() - 6 * 3600000),
-    generatedBy: 'System Auto',
-    status: 'completed',
-    size: '2.4 MB',
-    format: 'PDF',
-  },
-  {
-    id: 'rep-2',
-    name: 'Water Quality Report - Dec 10, 2024',
-    generatedAt: new Date(Date.now() - 5 * 3600000),
-    generatedBy: 'System Auto',
-    status: 'completed',
-    size: '1.8 MB',
-    format: 'PDF',
-  },
-  {
-    id: 'rep-3',
-    name: 'Alert Analysis - Dec 9, 2024',
-    generatedAt: new Date(Date.now() - 24 * 3600000),
-    generatedBy: 'Rahul Kumar',
-    status: 'completed',
-    size: '3.2 MB',
-    format: 'Excel',
-  },
-  {
-    id: 'rep-4',
-    name: 'Weekly Performance Report - Dec 9, 2024',
-    generatedAt: new Date(Date.now() - 26 * 3600000),
-    generatedBy: 'System Auto',
-    status: 'completed',
-    size: '4.1 MB',
-    format: 'PDF',
-  },
-  {
-    id: 'rep-5',
-    name: 'Custom Export - Chennai WTP',
-    generatedAt: new Date(Date.now() - 48 * 3600000),
-    generatedBy: 'Priya Sharma',
-    status: 'completed',
-    size: '856 KB',
-    format: 'CSV',
-  },
-  {
-    id: 'rep-6',
-    name: 'Equipment Health Report - Dec 8, 2024',
-    generatedAt: new Date(Date.now() - 72 * 3600000),
-    generatedBy: 'System Auto',
-    status: 'processing',
-    size: '--',
-    format: 'PDF',
-  },
-];
+const recentReports: GeneratedReport[] = [];
 
 type TabType = 'templates' | 'history' | 'scheduled';
 

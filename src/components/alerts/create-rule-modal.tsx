@@ -8,7 +8,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { AlertRule, SensorType, AlertSeverity } from '@/types';
-import { mockPlants } from '@/data/mock-plants';
+import { usePlants } from '@/lib/api/hooks';
 import {
   X,
   Plus,
@@ -64,6 +64,9 @@ const notificationChannels = [
 ];
 
 export function CreateRuleModal({ open, onClose, onSave }: CreateRuleModalProps) {
+  const { data: livePlants } = usePlants();
+  const plants = livePlants ?? [];
+
   const [formData, setFormData] = useState({
     name: '',
     sensorType: 'pH' as SensorType,
@@ -155,7 +158,7 @@ export function CreateRuleModal({ open, onClose, onSave }: CreateRuleModalProps)
   const toggleAllPlants = () => {
     setFormData((prev) => ({
       ...prev,
-      plantIds: prev.plantIds.length === mockPlants.length ? [] : mockPlants.map((p) => p.id),
+      plantIds: prev.plantIds.length === plants.length ? [] : plants.map((p) => p.id),
     }));
   };
 
@@ -342,11 +345,12 @@ export function CreateRuleModal({ open, onClose, onSave }: CreateRuleModalProps)
                 onClick={toggleAllPlants}
                 className="text-[10px] font-bold text-slate-600 hover:text-slate-800"
               >
-                {formData.plantIds.length === mockPlants.length ? 'DESELECT ALL' : 'SELECT ALL'}
+                {formData.plantIds.length === plants.length && plants.length > 0
+                  ? 'DESELECT ALL' : 'SELECT ALL'}
               </button>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              {mockPlants.map((plant) => {
+              {plants.map((plant) => {
                 const isSelected = formData.plantIds.includes(plant.id);
                 return (
                   <button

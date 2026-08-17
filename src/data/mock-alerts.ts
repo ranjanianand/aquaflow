@@ -55,6 +55,16 @@ const PARAMETER_LABEL: Record<SensorType, string> = {
   start_count: 'Start Count',
   valve_open: 'Valve Open',
   valve_closed: 'Valve Closed',
+  COD: 'COD',
+  BOD: 'BOD',
+  TSS: 'TSS',
+  coliform: 'Coliform',
+  hardness: 'Hardness',
+  alkalinity: 'Alkalinity',
+  iron: 'Iron',
+  manganese: 'Manganese',
+  fluoride: 'Fluoride',
+  nitrate: 'Nitrate',
 };
 
 function describe(sensor: Sensor): {

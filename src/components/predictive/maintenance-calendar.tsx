@@ -4,8 +4,8 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Calendar, Clock, Wrench, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
-import { useState } from 'react';
-import { mockEquipmentHealth } from '@/data/mock-operations';
+import { useMemo, useState } from 'react';
+import { useEquipment } from '@/lib/api/hooks';
 
 interface MaintenanceEvent {
   id: string;
@@ -17,23 +17,30 @@ interface MaintenanceEvent {
   description: string;
 }
 
-// Generate maintenance events from equipment health data
-const generateMaintenanceEvents = (): MaintenanceEvent[] => {
-  return mockEquipmentHealth.map((eq) => ({
-    id: eq.id,
-    date: eq.nextMaintenance,
-    equipment: eq.name,
-    plant: eq.plantName,
-    type: eq.daysRemaining <= 0 ? 'overdue' : eq.status === 'critical' || eq.status === 'warning' ? 'predicted' : 'scheduled',
-    priority: eq.status === 'critical' ? 'critical' : eq.status === 'warning' ? 'high' : eq.status === 'attention' ? 'medium' : 'low',
-    description: `${eq.type.charAt(0).toUpperCase() + eq.type.slice(1)} maintenance - Health: ${eq.healthScore}%`,
-  }));
-};
-
-const maintenanceEvents = generateMaintenanceEvents();
-
 export function MaintenanceCalendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
+  const { data: equipment, loading } = useEquipment();
+
+  // Only what the plant actually reports. A fault bit is a real event on a
+  // real date; a service interval is not something the gateway sends, so no
+  // future dates are shown until the client supplies them.
+  const maintenanceEvents = useMemo<MaintenanceEvent[]>(
+    () => (equipment ?? [])
+      // A fault with no timestamp cannot be placed on a calendar, and guessing
+      // a date for it would put a real problem on the wrong day.
+      .filter((eq) => eq.fault && eq.lastSeen)
+      .map((eq) => ({
+        id: eq.id,
+        date: new Date(eq.lastSeen!),
+        equipment: eq.name,
+        plant: eq.plantName,
+        type: 'overdue' as const,
+        priority: 'critical' as const,
+        description: `Fault reported${
+          eq.runHours != null ? ` \u00b7 ${eq.runHours.toLocaleString()} run hours` : ''}`,
+      })),
+    [equipment],
+  );
 
   const getDaysInMonth = (date: Date) => {
     return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
@@ -85,15 +92,9 @@ export function MaintenanceCalendar() {
     }
   };
 
-  // Upcoming maintenance list (next 14 days)
-  const upcomingEvents = maintenanceEvents
-    .filter((event) => {
-      const eventDate = new Date(event.date);
-      const now = new Date();
-      const twoWeeks = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
-      return eventDate >= now && eventDate <= twoWeeks;
-    })
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  const noSchedule = !loading && maintenanceEvents.length === 0;
+  const upcomingEvents = [...maintenanceEvents]
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   return (
     <Card className="overflow-hidden">
@@ -197,13 +198,13 @@ export function MaintenanceCalendar() {
 
           {/* Upcoming Events List */}
           <div>
-            <h4 className="text-[13px] font-semibold mb-3">Upcoming Maintenance (14 days)</h4>
+            <h4 className="text-[13px] font-semibold mb-3">Needs attention</h4>
             <div className="space-y-2 max-h-[320px] overflow-y-auto pr-2">
               {upcomingEvents.length > 0 ? (
                 upcomingEvents.map((event) => {
                   const TypeIcon = getTypeIcon(event.type);
-                  const daysUntil = Math.ceil(
-                    (new Date(event.date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+                  const daysUntil = -Math.floor(
+                    (Date.now() - new Date(event.date).getTime()) / (1000 * 60 * 60 * 24)
                   );
 
                   return (
@@ -242,9 +243,20 @@ export function MaintenanceCalendar() {
                   );
                 })
               ) : (
-                <div className="text-center py-8">
+                <div className="text-center py-8 px-4">
                   <Calendar className="h-8 w-8 mx-auto text-muted-foreground/30 mb-2" />
-                  <p className="text-[12px] text-muted-foreground">No upcoming maintenance</p>
+                  <p className="text-[12px] text-muted-foreground">
+                    {loading ? 'Loading…' : 'No equipment currently reporting a fault'}
+                  </p>
+                  {/* Said plainly, because an empty calendar otherwise reads as
+                      "nothing is due" rather than "no schedule was supplied". */}
+                  {noSchedule && (
+                    <p className="text-[10px] text-muted-foreground/70 mt-2 max-w-[16rem] mx-auto">
+                      Scheduled maintenance dates need service intervals from the
+                      plant. The gateway sends run hours and fault status, not a
+                      service plan.
+                    </p>
+                  )}
                 </div>
               )}
             </div>

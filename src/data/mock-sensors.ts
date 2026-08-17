@@ -58,6 +58,16 @@ const sensorConfigs: Record<SensorType, { unit: string; min: number; max: number
   start_count: { unit: '', min: 0, max: 0, base: 0, setpoint: 0, variance: 0 },
   valve_open: { unit: '', min: 0, max: 1, base: 1, setpoint: 1, variance: 0 },
   valve_closed: { unit: '', min: 0, max: 1, base: 0, setpoint: 0, variance: 0 },
+  COD: { unit: 'mg/L', min: 0, max: 0, base: 0, setpoint: 0, variance: 0 },
+  BOD: { unit: 'mg/L', min: 0, max: 0, base: 0, setpoint: 0, variance: 0 },
+  TSS: { unit: 'mg/L', min: 0, max: 0, base: 0, setpoint: 0, variance: 0 },
+  coliform: { unit: 'CFU/100mL', min: 0, max: 0, base: 0, setpoint: 0, variance: 0 },
+  hardness: { unit: 'mg/L', min: 0, max: 0, base: 0, setpoint: 0, variance: 0 },
+  alkalinity: { unit: 'mg/L', min: 0, max: 0, base: 0, setpoint: 0, variance: 0 },
+  iron: { unit: 'mg/L', min: 0, max: 0, base: 0, setpoint: 0, variance: 0 },
+  manganese: { unit: 'mg/L', min: 0, max: 0, base: 0, setpoint: 0, variance: 0 },
+  fluoride: { unit: 'mg/L', min: 0, max: 0, base: 0, setpoint: 0, variance: 0 },
+  nitrate: { unit: 'mg/L', min: 0, max: 0, base: 0, setpoint: 0, variance: 0 },
 };
 
 // Get communication status based on lastUpdated
@@ -146,6 +156,7 @@ const generateTag = (type: SensorType, plantId: string, index: number): string =
     ORP: 'ORP',
     energy: 'JI', power: 'JI', run_status: 'XS', fault: 'XA',
     run_hours: 'KQ', start_count: 'KQ', valve_open: 'ZSO', valve_closed: 'ZSC',
+    COD: 'LAB', BOD: 'LAB', TSS: 'LAB', coliform: 'LAB', hardness: 'LAB', alkalinity: 'LAB', iron: 'LAB', manganese: 'LAB', fluoride: 'LAB', nitrate: 'LAB',
   };
   const plantNum = plantId.replace('plant-', '');
   return `${typePrefix[type]}-${plantNum}${String(index + 1).padStart(3, '0')}`;
@@ -166,6 +177,7 @@ const generateSensorsForPlant = (plantId: string): Sensor[] => {
     chlorine: 0, DO: 0, level: 0, conductivity: 0, ORP: 0,
     energy: 0, power: 0, run_status: 0, fault: 0,
     run_hours: 0, start_count: 0, valve_open: 0, valve_closed: 0,
+    COD: 0, BOD: 0, TSS: 0, coliform: 0, hardness: 0, alkalinity: 0, iron: 0, manganese: 0, fluoride: 0, nitrate: 0,
   };
 
   for (let i = 0; i < config.count; i++) {

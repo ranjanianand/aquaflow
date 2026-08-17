@@ -84,6 +84,18 @@ const PLAUSIBLE: Record<SensorType, ThresholdBand> = {
   start_count:  { warnMin: 0, warnMax: 0, critMin: 0, critMax: 0 },
   valve_open:   { warnMin: 0, warnMax: 1, critMin: 0, critMax: 1 },
   valve_closed: { warnMin: 0, warnMax: 1, critMin: 0, critMax: 1 },
+  // Laboratory parameters. Indicative — COD and BOD in particular are set
+  // by discharge consent and differ per site.
+  COD: { warnMin: 0, warnMax: 50, critMin: 0, critMax: 125 },
+  BOD: { warnMin: 0, warnMax: 10, critMin: 0, critMax: 25 },
+  TSS: { warnMin: 0, warnMax: 20, critMin: 0, critMax: 45 },
+  coliform: { warnMin: 0, warnMax: 0, critMin: 0, critMax: 0 },
+  hardness: { warnMin: 50, warnMax: 300, critMin: 0, critMax: 500 },
+  alkalinity: { warnMin: 50, warnMax: 200, critMin: 20, critMax: 400 },
+  iron: { warnMin: 0, warnMax: 0.2, critMin: 0, critMax: 0.3 },
+  manganese: { warnMin: 0, warnMax: 0.05, critMin: 0, critMax: 0.1 },
+  fluoride: { warnMin: 0.5, warnMax: 1.0, critMin: 0, critMax: 1.5 },
+  nitrate: { warnMin: 0, warnMax: 40, critMin: 0, critMax: 50 },
 };
 
 /**

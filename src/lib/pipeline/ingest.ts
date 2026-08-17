@@ -31,6 +31,16 @@ const CANONICAL_UNIT: Record<SensorType, string> = {
   start_count: '',
   valve_open: '',
   valve_closed: '',
+  COD: 'mg/L',
+  BOD: 'mg/L',
+  TSS: 'mg/L',
+  coliform: 'CFU/100mL',
+  hardness: 'mg/L',
+  alkalinity: 'mg/L',
+  iron: 'mg/L',
+  manganese: 'mg/L',
+  fluoride: 'mg/L',
+  nitrate: 'mg/L',
 };
 
 /**

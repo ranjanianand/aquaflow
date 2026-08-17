@@ -23,12 +23,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { usePlants, useKpis, useEquipment } from '@/lib/api/hooks';
 import {
-  getOperationalAssetsCount,
-  getFaultAssetsCount,
-  getMaintenanceAssetsCount,
-  getAverageEfficiency,
-  getAssetTypeCount,
-  getMaintenanceDueAssets,
   getAssetTypeLabel,
   Asset,
   AssetType,
@@ -98,58 +92,6 @@ interface MaintenanceItem {
   priority: 'high' | 'medium' | 'low';
 }
 
-const maintenanceSchedule: MaintenanceItem[] = [
-  {
-    id: 'maint-1',
-    plantName: 'Chennai WTP-01',
-    equipment: 'RO Membrane Unit A',
-    type: 'Preventive',
-    scheduledDate: new Date(Date.now() + 2 * 24 * 3600000),
-    status: 'scheduled',
-    assignedTo: 'Amit Singh',
-    priority: 'high',
-  },
-  {
-    id: 'maint-2',
-    plantName: 'Mumbai WTP-02',
-    equipment: 'Flow Sensor Array',
-    type: 'Calibration',
-    scheduledDate: new Date(Date.now() + 5 * 24 * 3600000),
-    status: 'scheduled',
-    assignedTo: 'Priya Sharma',
-    priority: 'medium',
-  },
-  {
-    id: 'maint-3',
-    plantName: 'Delhi WTP-03',
-    equipment: 'pH Sensor Bank',
-    type: 'Replacement',
-    scheduledDate: new Date(Date.now() - 1 * 24 * 3600000),
-    status: 'overdue',
-    assignedTo: 'Rahul Kumar',
-    priority: 'high',
-  },
-  {
-    id: 'maint-4',
-    plantName: 'Bangalore WTP-04',
-    equipment: 'Pump Motor P2',
-    type: 'Inspection',
-    scheduledDate: new Date(Date.now() + 7 * 24 * 3600000),
-    status: 'scheduled',
-    assignedTo: 'Vikram Reddy',
-    priority: 'low',
-  },
-  {
-    id: 'maint-5',
-    plantName: 'Mumbai WTP-02',
-    equipment: 'Chlorine Dosing System',
-    type: 'Repair',
-    scheduledDate: new Date(Date.now() + 1 * 24 * 3600000),
-    status: 'scheduled',
-    assignedTo: 'Suresh Patel',
-    priority: 'high',
-  },
-];
 
 export default function AssetsPage() {
   // Plants, sensors and counts from the database.
@@ -175,11 +117,54 @@ export default function AssetsPage() {
     // manufacturer, model, serial, install date and service dates are left
     // undefined on purpose — the controller does not carry them.
   }));
+
+  // Counted from the equipment above, not from a fixture in another module.
+  const getOperationalAssetsCount = () =>
+    mockAssets.filter((a) => a.status === 'operational').length;
+  const getFaultAssetsCount = () =>
+    mockAssets.filter((a) => a.status === 'fault').length;
+  const getMaintenanceAssetsCount = () =>
+    mockAssets.filter((a) => a.status === 'maintenance').length;
+  const getAssetTypeCount = () =>
+    mockAssets.reduce<Record<string, number>>((acc, a) => {
+      acc[a.type] = (acc[a.type] ?? 0) + 1;
+      return acc;
+    }, {});
+
+  // A controller reports run hours and a fault bit. It does not report an
+  // efficiency figure or a service date, and neither can be derived from the
+  // other, so both are reported as unavailable rather than computed from
+  // fields that are always undefined.
+  const getAverageEfficiency = (): number | null => null;
+  const getMaintenanceDueAssets = (_days = 30): Asset[] => [];
+
+
+  // A controller reports a fault bit and run hours. It does not carry a
+  // service plan, an assigned engineer or a scheduled date — those live in a
+  // CMMS we have not been given — so the only maintenance items shown are
+  // faults the plant is reporting now.
+  const maintenanceSchedule: MaintenanceItem[] = (liveEquipment ?? [])
+    .filter((e) => e.fault)
+    .map((e) => ({
+      id: e.id,
+      plantName: e.plantName,
+      equipment: e.name,
+      type: 'Fault reported',
+      scheduledDate: e.lastSeen ? new Date(e.lastSeen) : new Date(),
+      status: 'overdue' as const,
+      assignedTo: '\u2014',
+      priority: 'high' as const,
+    }));
+
   const { data: liveSensors } = useAllSensors();
   const { data: kpis } = useKpis();
   const mockSensors = liveSensors ?? [];
+  // Only sensors that have actually reported. A sensor with no reading is not
+  // normal — it is unknown, and counting it as normal is how 275 "normal"
+  // sensors appeared out of an estate of 257 that have ever sent a value.
+  const reporting = mockSensors.filter((s) => s.lastUpdated != null);
   const getSensorsByStatus = (status: string) =>
-    mockSensors.filter((s) => s.status === status);
+    reporting.filter((s) => s.status === status);
   const mockPlants = livePlants ?? [];
   const getOnlinePlantsCount = () => kpis?.plantsOnline ?? 0;
   const getTotalSensorCount = () => kpis?.sensorsTotal ?? 0;
@@ -450,7 +435,7 @@ export default function AssetsPage() {
               <TrendingUp className="h-3.5 w-3.5 text-cyan-600" />
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="text-xl font-bold font-mono text-cyan-600">{getAverageEfficiency()}%</span>
+              <span className="text-xl font-bold font-mono text-slate-400" title="A controller does not report efficiency">\u2014</span>
               <span className="text-[10px] text-slate-500">overall</span>
             </div>
           </div>

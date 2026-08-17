@@ -6,6 +6,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import {
   Activity,
+  FlaskConical,
   Bell,
   FileText,
   Building2,
@@ -74,6 +75,7 @@ const buildNavigation = (alarmCount?: number): NavSection[] => [
     title: 'Operations',
     items: [
       { title: 'Real-Time', href: '/monitoring', icon: Activity },
+      { title: 'Manual Entry', href: '/manual-entry', icon: FlaskConical },
       { title: 'Data Pipeline', href: '/data-pipeline', icon: Filter },
       { title: 'Maintenance', href: '/service-monitor', icon: Wrench },
       { title: 'Asset Health', href: '/asset-monitor', icon: Box },

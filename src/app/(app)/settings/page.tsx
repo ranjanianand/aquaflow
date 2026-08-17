@@ -39,19 +39,9 @@ import {
   Zap,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { currentUser } from '@/data/mock-users';
 import { usePlants } from '@/lib/api/hooks';
-import {
-  mockGateways,
-  mqttBrokerConfig,
-  getGatewayStatusColor,
-  getPLCStatusColor,
-  getOnlineGatewaysCount,
-  getTotalPLCConnections,
-  getConnectedPLCCount,
-  getTotalDataPointsPerSecond,
-  Gateway,
-} from '@/data/mock-gateways';
+import { useAuth } from '@/contexts/auth-context';
+import { useGateways } from '@/lib/api/hooks';
 import { X, MoreVertical } from 'lucide-react';
 import { FEATURES } from '@/lib/features';
 
@@ -160,6 +150,39 @@ const getAuditTypeColor = (type: string) => {
 };
 
 export default function SettingsPage() {
+  // Whoever is actually signed in. The fixture showed one fixed person to
+  // every user, so the profile tab named the wrong operator.
+  const { user: authUser } = useAuth();
+
+  // The gateways that have actually delivered files. A file-drop integration
+  // sees delivery, not the device: there is no channel that reports a
+  // gateway's CPU, memory, firmware or PLC links, so those are not shown
+  // rather than invented.
+  const { data: liveGateways } = useGateways();
+  const mockGateways = (liveGateways ?? []).map((g) => ({
+    id: g.id,
+    plantId: g.plantId,
+    plantName: g.plantName,
+    name: g.id,
+    model: g.model,
+    status: g.status as 'online' | 'offline' | 'warning',
+    filesReceived: g.filesReceived,
+    lastFile: g.lastFile,
+    seqGaps: g.seqGaps,
+    sendsScaled: g.sendsScaled,
+    qualityFamily: g.qualityFamily,
+  }));
+  const getOnlineGatewaysCount = () =>
+    mockGateways.filter((g) => g.status === 'online').length;
+
+  const currentUser = {
+    name: authUser?.name ?? 'Signed-out user',
+    email: authUser?.email ?? '',
+    role: authUser?.role ?? 'viewer',
+    status: authUser ? 'active' : 'inactive',
+    phone: '',
+  };
+
   // Plant list from the database. Was a fixture array whose ids,
   // names and online/offline status were fixed at build time.
   const { data: livePlants } = usePlants();
@@ -778,324 +801,116 @@ export default function SettingsPage() {
           {/* Integration Tab */}
           {activeTab === 'integration' && (
             <div className="p-4 space-y-4">
-              {/* MQTT Broker Configuration */}
-              <div className="border-2 border-slate-200 bg-white overflow-hidden">
-                <div className="bg-slate-50 px-4 py-2 border-b-2 border-slate-200 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Server className="h-4 w-4 text-slate-600" />
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700">MQTT Broker</span>
-                  </div>
-                  <span className={`flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold uppercase tracking-wider ${
-                    mqttBrokerConfig.status === 'connected' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+              {/* What is observable about a gateway when data arrives as files
+                  in a bucket: what it sent, when, and whether anything is
+                  missing. Device health would need an agent on the gateway. */}
+              <div className="grid grid-cols-4 gap-4">
+                <div className="border-2 border-slate-200 bg-white p-4">
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 mb-1">Gateways</p>
+                  <p className="text-xl font-bold font-mono text-slate-800">
+                    {getOnlineGatewaysCount()}
+                    <span className="text-slate-400 text-sm">/{mockGateways.length}</span>
+                  </p>
+                  <p className="text-[10px] text-slate-500">delivering</p>
+                </div>
+                <div className="border-2 border-slate-200 bg-white p-4">
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 mb-1">Files received</p>
+                  <p className="text-xl font-bold font-mono text-slate-800">
+                    {mockGateways.reduce((n, g) => n + (g.filesReceived ?? 0), 0).toLocaleString()}
+                  </p>
+                  <p className="text-[10px] text-slate-500">all time</p>
+                </div>
+                <div className="border-2 border-slate-200 bg-white p-4">
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 mb-1">Sequence gaps</p>
+                  {/* The one number that says data was lost in transit rather
+                      than merely delayed. */}
+                  <p className={`text-xl font-bold font-mono ${
+                    mockGateways.some((g) => g.seqGaps > 0) ? 'text-amber-600' : 'text-emerald-600'
                   }`}>
-                    {mqttBrokerConfig.status === 'connected' ? (
-                      <Wifi className="h-3 w-3" />
-                    ) : (
-                      <WifiOff className="h-3 w-3" />
-                    )}
-                    {mqttBrokerConfig.status}
+                    {mockGateways.reduce((n, g) => n + (g.seqGaps ?? 0), 0)}
+                  </p>
+                  <p className="text-[10px] text-slate-500">missing polls</p>
+                </div>
+                <div className="border-2 border-slate-200 bg-white p-4">
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 mb-1">Transport</p>
+                  <p className="text-sm font-bold text-slate-800 mt-1">Bucket file drop</p>
+                  <p className="text-[10px] text-slate-500">S3-compatible</p>
+                </div>
+              </div>
+
+              <div className="border-2 border-slate-200 bg-white overflow-hidden">
+                <div className="bg-slate-50 px-4 py-2 border-b-2 border-slate-200 flex items-center gap-2">
+                  <Router className="h-4 w-4 text-slate-600" />
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700">
+                    Gateways
                   </span>
                 </div>
-                <div className="p-4">
-                  <div className="grid grid-cols-4 gap-4 mb-4">
-                    <div>
-                      <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 mb-1">Host</p>
-                      <p className="text-sm font-mono text-slate-700">{mqttBrokerConfig.host}</p>
-                    </div>
-                    <div>
-                      <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 mb-1">Port</p>
-                      <p className="text-sm font-mono text-slate-700">{mqttBrokerConfig.port}</p>
-                    </div>
-                    <div>
-                      <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 mb-1">Protocol</p>
-                      <p className="text-sm font-mono text-slate-700 uppercase">{mqttBrokerConfig.protocol}</p>
-                    </div>
-                    <div>
-                      <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 mb-1">QoS Level</p>
-                      <p className="text-sm font-mono text-slate-700">{mqttBrokerConfig.qos}</p>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-4 pt-4 border-t border-slate-200">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 bg-emerald-100 flex items-center justify-center">
-                        <Router className="h-5 w-5 text-emerald-600" />
-                      </div>
-                      <div>
-                        <p className="text-lg font-bold font-mono text-slate-800">{mqttBrokerConfig.connectedGateways}</p>
-                        <p className="text-[10px] text-slate-500 uppercase">Gateways Connected</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 bg-blue-100 flex items-center justify-center">
-                        <Activity className="h-5 w-5 text-blue-600" />
-                      </div>
-                      <div>
-                        <p className="text-lg font-bold font-mono text-slate-800">{mqttBrokerConfig.messagesPerSecond.toLocaleString()}</p>
-                        <p className="text-[10px] text-slate-500 uppercase">Messages/sec</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 bg-purple-100 flex items-center justify-center">
-                        <Zap className="h-5 w-5 text-purple-600" />
-                      </div>
-                      <div>
-                        <p className="text-lg font-bold font-mono text-slate-800">{getTotalDataPointsPerSecond().toLocaleString()}</p>
-                        <p className="text-[10px] text-slate-500 uppercase">Data Points/sec</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-[9px] uppercase tracking-wider text-slate-500 border-b-2 border-slate-200">
+                      <th className="text-left px-4 py-2 font-bold">Gateway</th>
+                      <th className="text-left px-4 py-2 font-bold">Plant</th>
+                      <th className="text-left px-4 py-2 font-bold">Model</th>
+                      <th className="text-left px-4 py-2 font-bold">Quality</th>
+                      <th className="text-left px-4 py-2 font-bold">Values</th>
+                      <th className="text-right px-4 py-2 font-bold">Files</th>
+                      <th className="text-right px-4 py-2 font-bold">Gaps</th>
+                      <th className="text-left px-4 py-2 font-bold">Last file</th>
+                      <th className="text-left px-4 py-2 font-bold">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {mockGateways.map((g) => (
+                      <tr key={g.id} className="border-b border-slate-100">
+                        <td className="px-4 py-2 font-mono text-xs text-slate-700">{g.id}</td>
+                        <td className="px-4 py-2 text-slate-600">{g.plantName}</td>
+                        <td className="px-4 py-2 text-slate-500 text-xs">
+                          {/* UNCONFIRMED until the integrator tells us. Saying so
+                              beats printing a model nobody verified. */}
+                          {g.model === 'UNCONFIRMED'
+                            ? <span className="text-amber-600">unconfirmed</span>
+                            : g.model}
+                        </td>
+                        <td className="px-4 py-2 text-slate-500 text-xs">{g.qualityFamily}</td>
+                        <td className="px-4 py-2 text-slate-500 text-xs">
+                          {g.sendsScaled ? 'engineering' : 'raw counts'}
+                        </td>
+                        <td className="px-4 py-2 text-right font-mono text-xs text-slate-700">
+                          {(g.filesReceived ?? 0).toLocaleString()}
+                        </td>
+                        <td className={`px-4 py-2 text-right font-mono text-xs font-semibold ${
+                          g.seqGaps > 0 ? 'text-amber-600' : 'text-slate-400'
+                        }`}>
+                          {g.seqGaps}
+                        </td>
+                        <td className="px-4 py-2 font-mono text-[11px] text-slate-500">
+                          {g.lastFile ? new Date(g.lastFile).toLocaleString() : '\u2014'}
+                        </td>
+                        <td className="px-4 py-2">
+                          <span className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                            g.status === 'online' ? 'bg-emerald-100 text-emerald-700'
+                            : g.status === 'warning' ? 'bg-amber-100 text-amber-700'
+                            : 'bg-slate-200 text-slate-600'
+                          }`}>
+                            {g.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                    {mockGateways.length === 0 && (
+                      <tr><td colSpan={9} className="px-4 py-10 text-center text-sm text-slate-400">
+                        No gateway has delivered a file yet
+                      </td></tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
 
-              {/* Gateway Summary Stats */}
-              <div className="grid grid-cols-4 gap-4">
-                <div className="bg-white border-2 border-slate-200 border-l-[3px] border-l-emerald-500 p-3">
-                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 mb-1">Gateways Online</p>
-                  <p className="text-xl font-bold font-mono text-emerald-600">{getOnlineGatewaysCount()}<span className="text-slate-400 text-sm">/{mockGateways.length}</span></p>
-                </div>
-                <div className="bg-white border-2 border-slate-200 border-l-[3px] border-l-blue-500 p-3">
-                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 mb-1">Total PLCs</p>
-                  <p className="text-xl font-bold font-mono text-blue-600">{getTotalPLCConnections()}</p>
-                </div>
-                <div className="bg-white border-2 border-slate-200 border-l-[3px] border-l-emerald-500 p-3">
-                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 mb-1">PLCs Connected</p>
-                  <p className="text-xl font-bold font-mono text-emerald-600">{getConnectedPLCCount()}<span className="text-slate-400 text-sm">/{getTotalPLCConnections()}</span></p>
-                </div>
-                <div className="bg-white border-2 border-slate-200 border-l-[3px] border-l-purple-500 p-3">
-                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 mb-1">Throughput</p>
-                  <p className="text-xl font-bold font-mono text-purple-600">{getTotalDataPointsPerSecond().toLocaleString()}<span className="text-slate-400 text-sm">/s</span></p>
-                </div>
-              </div>
-
-              {/* Plant Gateways */}
-              <div className="border-2 border-slate-200 bg-white overflow-hidden">
-                <div className="bg-slate-50 px-4 py-2 border-b-2 border-slate-200 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Router className="h-4 w-4 text-slate-600" />
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700">Plant Gateways</span>
-                  </div>
-                  <button
-                    onClick={() => setShowAddGatewayModal(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 text-white text-[10px] font-bold uppercase tracking-wider hover:bg-slate-800 transition-colors"
-                  >
-                    <Plus className="h-3 w-3" />
-                    Add Gateway
-                  </button>
-                </div>
-                <div className="divide-y divide-slate-200">
-                  {mockGateways.map((gateway) => {
-                    const statusColor = getGatewayStatusColor(gateway.status);
-                    const isExpanded = expandedGateway === gateway.id;
-                    return (
-                      <div key={gateway.id}>
-                        {/* Gateway Row */}
-                        <div
-                          className="flex items-center justify-between p-4 hover:bg-slate-50 cursor-pointer"
-                          onClick={() => setExpandedGateway(isExpanded ? null : gateway.id)}
-                        >
-                          <div className="flex items-center gap-4">
-                            <div className={`h-10 w-10 flex items-center justify-center ${statusColor.bg}`}>
-                              <Router className={`h-5 w-5 ${statusColor.text}`} />
-                            </div>
-                            <div>
-                              <p className="text-sm font-semibold text-slate-800 flex items-center gap-2">
-                                {gateway.name}
-                                <span className={`px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${statusColor.bg} ${statusColor.text}`}>
-                                  {gateway.status}
-                                </span>
-                              </p>
-                              <p className="text-xs text-slate-500">
-                                {gateway.plantName} • {gateway.model} • {gateway.ipAddress}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-6">
-                            <div className="text-right">
-                              <p className="text-xs font-mono text-slate-600">{gateway.dataPointsPerSecond}/s</p>
-                              <p className="text-[10px] text-slate-500">{gateway.plcConnections.length} PLCs</p>
-                            </div>
-                            <div className="flex items-center gap-3">
-                              <div className="flex items-center gap-1.5" title="CPU Usage">
-                                <Cpu className="h-3.5 w-3.5 text-slate-400" />
-                                <span className={`text-xs font-mono ${gateway.cpuUsage > 70 ? 'text-amber-600' : 'text-slate-600'}`}>{gateway.cpuUsage}%</span>
-                              </div>
-                              <div className="flex items-center gap-1.5" title="Memory Usage">
-                                <HardDrive className="h-3.5 w-3.5 text-slate-400" />
-                                <span className={`text-xs font-mono ${gateway.memoryUsage > 70 ? 'text-amber-600' : 'text-slate-600'}`}>{gateway.memoryUsage}%</span>
-                              </div>
-                            </div>
-                            <ChevronRight className={`h-4 w-4 text-slate-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-                          </div>
-                        </div>
-
-                        {/* Expanded PLC Details */}
-                        {isExpanded && (
-                          <div className="bg-slate-50 border-t border-slate-200 p-4">
-                            <div className="grid grid-cols-2 gap-4 mb-4">
-                              {/* Gateway Details */}
-                              <div className="bg-white border border-slate-200 p-3">
-                                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-3">Gateway Details</p>
-                                <div className="grid grid-cols-2 gap-3 text-xs">
-                                  <div>
-                                    <span className="text-slate-500">Serial:</span>
-                                    <span className="ml-2 font-mono text-slate-700">{gateway.serialNumber}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-slate-500">Firmware:</span>
-                                    <span className="ml-2 font-mono text-slate-700">{gateway.firmwareVersion}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-slate-500">MAC:</span>
-                                    <span className="ml-2 font-mono text-slate-700">{gateway.macAddress}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-slate-500">Uptime:</span>
-                                    <span className="ml-2 font-mono text-slate-700">{Math.floor(gateway.uptime / 24)}d {gateway.uptime % 24}h</span>
-                                  </div>
-                                </div>
-                              </div>
-                              {/* Buffer Status */}
-                              <div className="bg-white border border-slate-200 p-3">
-                                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-3">Offline Buffer</p>
-                                <div className="flex items-center gap-4">
-                                  <div className="flex-1">
-                                    <div className="flex items-center justify-between mb-1">
-                                      <span className="text-xs text-slate-500">Used</span>
-                                      <span className="text-xs font-mono text-slate-700">{gateway.bufferUsed} / {gateway.bufferSize} MB</span>
-                                    </div>
-                                    <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
-                                      <div
-                                        className={`h-full ${gateway.bufferUsed / gateway.bufferSize > 0.7 ? 'bg-amber-500' : 'bg-blue-500'}`}
-                                        style={{ width: `${(gateway.bufferUsed / gateway.bufferSize) * 100}%` }}
-                                      />
-                                    </div>
-                                  </div>
-                                  <Database className={`h-6 w-6 ${gateway.bufferUsed / gateway.bufferSize > 0.7 ? 'text-amber-500' : 'text-slate-400'}`} />
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* PLC Connections */}
-                            <div className="bg-white border border-slate-200 overflow-visible">
-                              <div className="px-3 py-2 border-b border-slate-200 flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                  <Network className="h-3.5 w-3.5 text-slate-500" />
-                                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">PLC Connections</span>
-                                </div>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleOpenAddPLC(gateway.id);
-                                  }}
-                                  className="flex items-center gap-1 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-white bg-slate-700 hover:bg-slate-800 transition-colors"
-                                >
-                                  <Plus className="h-3 w-3" />
-                                  Add PLC
-                                </button>
-                              </div>
-                              <table className="w-full">
-                                <thead>
-                                  <tr className="bg-slate-50 text-[9px] font-bold uppercase tracking-wider text-slate-500">
-                                    <th className="text-left px-3 py-2">Name</th>
-                                    <th className="text-left px-3 py-2">Protocol</th>
-                                    <th className="text-left px-3 py-2">Address</th>
-                                    <th className="text-left px-3 py-2">Vendor / Model</th>
-                                    <th className="text-left px-3 py-2">Poll Rate</th>
-                                    <th className="text-left px-3 py-2">Registers</th>
-                                    <th className="text-left px-3 py-2">Status</th>
-                                    <th className="text-right px-3 py-2">Actions</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {gateway.plcConnections.map((plc) => {
-                                    const plcStatusColor = getPLCStatusColor(plc.status);
-                                    return (
-                                      <tr key={plc.id} className="border-t border-slate-100 hover:bg-slate-50">
-                                        <td className="px-3 py-2 text-sm font-medium text-slate-700">{plc.name}</td>
-                                        <td className="px-3 py-2">
-                                          <span className="px-2 py-0.5 bg-slate-100 text-slate-600 text-[10px] font-mono">{plc.protocol}</span>
-                                        </td>
-                                        <td className="px-3 py-2 text-xs font-mono text-slate-600">{plc.ipAddress}:{plc.port}</td>
-                                        <td className="px-3 py-2 text-xs text-slate-600">{plc.vendor} {plc.model}</td>
-                                        <td className="px-3 py-2 text-xs font-mono text-slate-600">{plc.pollIntervalMs}ms</td>
-                                        <td className="px-3 py-2 text-xs font-mono text-slate-600">{plc.registerCount}</td>
-                                        <td className="px-3 py-2">
-                                          <span className={`px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${plcStatusColor.bg} ${plcStatusColor.text}`}>
-                                            {plc.status}
-                                          </span>
-                                        </td>
-                                        <td className="px-3 py-2 text-right">
-                                          <div className="relative">
-                                            <button
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                setPLCActionMenu(plcActionMenu === plc.id ? null : plc.id);
-                                              }}
-                                              className="p-1.5 hover:bg-slate-100 text-slate-500 rounded"
-                                            >
-                                              <MoreVertical className="h-4 w-4" />
-                                            </button>
-                                            {/* Dropdown Menu */}
-                                            {plcActionMenu === plc.id && (
-                                              <>
-                                                {/* Backdrop to close menu when clicking outside */}
-                                                <div
-                                                  className="fixed inset-0 z-40"
-                                                  onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setPLCActionMenu(null);
-                                                  }}
-                                                />
-                                                <div className="absolute right-0 bottom-full mb-1 w-44 bg-white border-2 border-slate-200 shadow-xl z-50 rounded">
-                                                  <button
-                                                    onClick={(e) => {
-                                                      e.stopPropagation();
-                                                      handleRefreshPLC(plc.id, plc.name);
-                                                    }}
-                                                    className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-slate-700 hover:bg-slate-50 text-left"
-                                                  >
-                                                    <RefreshCw className="h-3.5 w-3.5 text-slate-500" />
-                                                    Refresh Connection
-                                                  </button>
-                                                  <button
-                                                    onClick={(e) => {
-                                                      e.stopPropagation();
-                                                      handleEditPLC(plc.id);
-                                                    }}
-                                                    className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-slate-700 hover:bg-slate-50 text-left"
-                                                  >
-                                                    <Edit3 className="h-3.5 w-3.5 text-slate-500" />
-                                                    Edit Configuration
-                                                  </button>
-                                                  <div className="border-t border-slate-200" />
-                                                  <button
-                                                    onClick={(e) => {
-                                                      e.stopPropagation();
-                                                      handleDeletePLC(plc.id, plc.name);
-                                                    }}
-                                                    className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-red-600 hover:bg-red-50 text-left"
-                                                  >
-                                                    <Trash2 className="h-3.5 w-3.5" />
-                                                    Remove PLC
-                                                  </button>
-                                                </div>
-                                              </>
-                                            )}
-                                          </div>
-                                        </td>
-                                      </tr>
-                                    );
-                                  })}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+              <p className="text-[11px] text-slate-400 px-1">
+                Device health \u2014 CPU, memory, firmware, PLC link state \u2014 is not
+                shown because a bucket drop carries no telemetry about the gateway
+                itself. Reporting it would need an agent installed on the device.
+              </p>
             </div>
           )}
 
