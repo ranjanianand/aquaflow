@@ -22,7 +22,18 @@ export type SensorType =
   | 'run_hours'      // motor hours run, drives service intervals
   | 'start_count'
   | 'valve_open'
-  | 'valve_closed';
+  | 'valve_closed'
+  // Laboratory parameters — entered by hand, no instrument exists for them.
+  | 'COD'
+  | 'BOD'
+  | 'TSS'
+  | 'coliform'
+  | 'hardness'
+  | 'alkalinity'
+  | 'iron'
+  | 'manganese'
+  | 'fluoride'
+  | 'nitrate';
 
 export type SensorStatus = 'normal' | 'warning' | 'critical';
 

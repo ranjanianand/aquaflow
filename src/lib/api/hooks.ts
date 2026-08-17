@@ -13,13 +13,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Alert, Plant } from '@/types';
 import {
   fetchAlertTrend, fetchAlerts, fetchAlertsHourly, fetchAllSensors, fetchHistory,
+  fetchInsights, type InsightsData,
+  fetchManualBatches, type ManualBatch,
+  fetchAcknowledgements, type Acknowledgement,
+  fetchAckHistory, type AckHistoryEntry,
   fetchAudit, fetchCompliance, fetchEnergy, fetchEquipment,
-  fetchGateways, fetchKnowledge, fetchKpis, fetchLiveKpis, fetchUsers,
+  fetchGateways, fetchKnowledge, fetchKpis, fetchLiveKpis,
+  fetchManualReadings, fetchManualSensors, fetchUsers,
   fetchPlants, fetchSensors,
   type AlertHour, type AlertTrendDay, type Compliance, type Kpis, type LiveAlert,
   type LiveParam,
   type AppUser, type AuditEntry, type EnergyMeter, type Equipment,
-  type KbArticle,
+  type KbArticle, type ManualReading, type ManualSensor,
   type LiveGateway,
   type LiveSensor,
   type TrendPoint,
@@ -184,6 +189,27 @@ export function useEnergy(hours = 24) {
     (s) => fetchEnergy(hours, s), [hours]);
 }
 
+/** Bench sheet submissions, newest first. */
+export function useManualBatches(limit = 30) {
+  return useResource<ManualBatch[]>((s) => fetchManualBatches(limit, s), [limit]);
+}
+
+/** Every acknowledgement, for the history view. */
+export function useAckHistory(limit = 50) {
+  return useResource<AckHistoryEntry[]>((s) => fetchAckHistory(limit, s), [limit]);
+}
+
+/** Who has acknowledged which insight. */
+export function useAcknowledgements() {
+  return useResource<Record<string, Acknowledgement>>((s) => fetchAcknowledgements(s), []);
+}
+
+/** Breach rates, silent instruments and held values, counted from readings. */
+export function useInsights(days = 30, plant?: string) {
+  return useResource<InsightsData | null>(
+    (s) => fetchInsights(days, plant, s), [days, plant]);
+}
+
 /** Pumps, blowers and valves, assembled from their run/fault/hours tags. */
 export function useEquipment(pollMs = 60_000) {
   return useResource<Equipment[]>((s) => fetchEquipment(s), [], pollMs);
@@ -202,4 +228,14 @@ export function useUsers() {
 /** Procedures and troubleshooting notes. */
 export function useKnowledge(search?: string) {
   return useResource<KbArticle[]>((s) => fetchKnowledge(search, s), [search]);
+}
+
+/** Parameters that accept a hand-entered reading. */
+export function useManualSensors(plant?: string) {
+  return useResource<ManualSensor[]>((s) => fetchManualSensors(plant, s), [plant]);
+}
+
+/** The entry log — what has been recorded by hand, newest first. */
+export function useManualReadings(limit = 50) {
+  return useResource<ManualReading[]>((s) => fetchManualReadings(limit, s), [limit]);
 }

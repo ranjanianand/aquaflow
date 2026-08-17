@@ -332,3 +332,250 @@ export async function fetchKnowledge(search?: string, signal?: AbortSignal) {
   const qs = search ? `?q=${encodeURIComponent(search)}` : '';
   return get<KbArticle[]>(`/knowledge${qs}`, signal);
 }
+
+export interface ManualSensor {
+  id: string; tag: string; parameter: string; unit: string;
+  location: string; stage: string; plantId: string; plantName: string;
+  warnMin: number | null; warnMax: number | null;
+  critMin: number | null; critMax: number | null;
+  lastReading: string | null; lastValue: number | null;
+}
+
+export async function fetchManualSensors(plant?: string, signal?: AbortSignal) {
+  const qs = plant ? `?plant=${encodeURIComponent(plant)}` : '';
+  return get<ManualSensor[]>(`/manual/sensors${qs}`, signal);
+}
+
+export interface ManualReading {
+  sensorId: string; tag: string; parameter: string; unit: string;
+  location: string; plantName: string; ts: string; value: number;
+  status: 'normal' | 'warning' | 'critical';
+  enteredBy: string; enteredAt: string | null; note: string | null;
+}
+
+export async function fetchManualReadings(limit = 50, signal?: AbortSignal) {
+  return get<ManualReading[]>(`/manual/readings?limit=${limit}`, signal);
+}
+
+/** The one write this API accepts. It records a measurement in our database —
+ *  it does not send anything to the plant. */
+export async function submitManualReading(body: {
+  sensorId: string; value: number; enteredBy: string;
+  ts?: string; note?: string;
+}): Promise<{ status: string; value: number; parameter: string; unit: string }> {
+  const res = await fetch(`${BASE}/manual/readings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    // The API explains why in `detail`. Surfacing that verbatim is more use
+    // than "request failed" — it says which rule the entry broke.
+    throw new ApiError(data.detail ?? `${res.status} ${res.statusText}`,
+                       res.status, `${BASE}/manual/readings`);
+  }
+  return data;
+}
+
+export interface UploadResult {
+  filename: string;
+  plant: string | null;
+  committed: boolean;
+  parsed: number;
+  accepted: number;
+  written: number;
+  rejected: number;
+  reasons: Record<string, number>;
+  rejectedTags: Record<string, string[]>;
+  preview: { sensorId: string; ts: string; value: number; status: string }[];
+}
+
+/** Load readings from a file, in any of the gateway formats the ingest reads.
+ *
+ *  Dry run unless `commit` is true — the moment to discover a file is wrong is
+ *  before it is in the database. */
+export async function uploadReadings(
+  file: File, opts: { commit?: boolean; plant?: string; enteredBy?: string } = {},
+): Promise<UploadResult> {
+  const form = new FormData();
+  form.append('file', file);
+  const qs = new URLSearchParams({
+    commit: String(opts.commit ?? false),
+    ...(opts.plant ? { plant: opts.plant } : {}),
+    ...(opts.enteredBy ? { entered_by: opts.enteredBy } : {}),
+  });
+  const res = await fetch(`${BASE}/upload/readings?${qs}`, { method: 'POST', body: form });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(data.detail ?? `${res.status} ${res.statusText}`,
+                       res.status, `${BASE}/upload/readings`);
+  }
+  return data;
+}
+
+export interface BatchRow {
+  sensorId: string;
+  ok: boolean;
+  error?: string;
+  value?: number;
+  status?: string;
+  parameter?: string;
+  unit?: string;
+  location?: string;
+}
+
+export interface BatchResult {
+  ts: string;
+  submitted: number;
+  recorded: number;
+  failed: number;
+  results: BatchRow[];
+}
+
+/** Record a round of samples: one sample time, many parameters. */
+export async function submitManualBatch(body: {
+  enteredBy: string;
+  ts?: string;
+  note?: string;
+  readings: { sensorId: string; value: number }[];
+}): Promise<BatchResult> {
+  const res = await fetch(`${BASE}/manual/readings/batch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(data.detail ?? `${res.status} ${res.statusText}`,
+                       res.status, `${BASE}/manual/readings/batch`);
+  }
+  return data;
+}
+
+export interface InsightParameter {
+  parameter: string; stage: string; samples: number; critical: number;
+  warning: number; sensors: number; plants: number; breachPct: number;
+}
+export interface InsightSensor {
+  id: string; tag: string; parameter: string; location: string; stage: string;
+  unit: string; plantId: string; plantName: string; samples: number;
+  critical: number; warning: number; avgValue: number; breachPct: number;
+  warnMin: number | null; warnMax: number | null;
+  critMin: number | null; critMax: number | null;
+}
+export interface InsightsData {
+  days: number;
+  parameters: InsightParameter[];
+  sensors: InsightSensor[];
+  coverage: {
+    total: number; never: number; stopped: number; reporting: number;
+    byPlant: { plantId: string; plantName: string; never: number; stopped: number;
+               configured: number; gatewayId: string | null; gatewayFiles: number;
+               gatewayLastFile: string | null }[];
+    examples: { id: string; tag: string; parameter: string; location: string;
+                plantId: string; plantName: string; lastSeen: string | null }[];
+  };
+  flatlined: { id: string; tag: string; parameter: string; location: string;
+               unit: string; plantId: string; plantName: string;
+               flatHours: number; stuckAt: number }[];
+  rejected: { reason: string; count: number }[];
+  removal: { plantId: string; plantName: string; parameter: string; unit: string;
+             rawAvg: number; finalAvg: number; removalPct: number;
+             samples: number }[];
+}
+
+/** Analytics over sensor data. Observations only — nothing is modelled. */
+export async function fetchInsights(days = 30, plant?: string, signal?: AbortSignal) {
+  const qs = new URLSearchParams({ days: String(days), ...(plant ? { plant } : {}) });
+  return get<InsightsData>(`/insights?${qs}`, signal);
+}
+
+export interface Acknowledgement {
+  acknowledgedBy: string;
+  acknowledgedAt: string;
+  note: string | null;
+}
+
+/** Current acknowledgement per insight id. */
+export async function fetchAcknowledgements(signal?: AbortSignal) {
+  return get<Record<string, Acknowledgement>>('/insights/acknowledgements', signal);
+}
+
+/** Record that somebody has read an insight. Changes nothing at the plant. */
+export async function acknowledgeInsight(body: {
+  insightId: string; acknowledgedBy: string; note?: string;
+}): Promise<Acknowledgement & { insightId: string }> {
+  const res = await fetch(`${BASE}/insights/acknowledgements`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(data.detail ?? `${res.status} ${res.statusText}`,
+                       res.status, `${BASE}/insights/acknowledgements`);
+  }
+  return data;
+}
+
+export interface BatchValue {
+  sensorId: string; parameter: string; location: string;
+  unit: string; value: number; status: string;
+}
+
+export interface ManualBatch {
+  id: number;
+  /** Human reference, e.g. "BS-0042" — readable over a radio. */
+  reference: string;
+  plantId: string; plantName: string;
+  sampleTs: string; enteredBy: string; enteredAt: string;
+  note: string | null;
+  readings: number; critical: number; warning: number; edits: number;
+  lastEditedBy: string | null;
+  lastEditedAt: string | null;
+  values: BatchValue[];
+}
+
+export async function fetchManualBatches(limit = 30, signal?: AbortSignal) {
+  return get<ManualBatch[]>(`/manual/batches?limit=${limit}`, signal);
+}
+
+export interface BatchEdit {
+  sensorId: string; parameter: string; location: string; unit: string;
+  from: number; to: number; editedBy: string; editedAt: string;
+  reason: string | null;
+}
+
+export async function fetchBatchEdits(batchId: number, signal?: AbortSignal) {
+  return get<BatchEdit[]>(`/manual/batches/${batchId}/edits`, signal);
+}
+
+/** Correct values in a submission. Every change is recorded. */
+export async function editManualBatch(batchId: number, body: {
+  editedBy: string; reason?: string;
+  readings: { sensorId: string; value: number }[];
+}): Promise<{ batchId: number; updated: number; results: BatchRow[] }> {
+  const res = await fetch(`${BASE}/manual/batches/${batchId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(data.detail ?? `${res.status} ${res.statusText}`,
+                       res.status, `${BASE}/manual/batches/${batchId}`);
+  }
+  return data;
+}
+
+export interface AckHistoryEntry {
+  id: number; insightId: string; kind: string; subject: string;
+  plantName: string | null; acknowledgedBy: string; acknowledgedAt: string;
+  note: string | null;
+}
+
+/** Every acknowledgement, newest first. */
+export async function fetchAckHistory(limit = 50, signal?: AbortSignal) {
+  return get<AckHistoryEntry[]>(`/insights/acknowledgements/history?limit=${limit}`, signal);
+}
