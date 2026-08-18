@@ -18,6 +18,31 @@ import type { Plant, Sensor, SensorReading } from '@/types';
  *  first and each request stalls ~2s before falling back to IPv4. */
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000';
 
+/** The bearer token for this session.
+ *
+ *  Held in a module variable rather than read from localStorage on every call:
+ *  the auth context owns the lifecycle, and a stale token lingering in storage
+ *  should not resurrect itself into a request.
+ */
+let authToken: string | null = null;
+
+export function setAuthToken(token: string | null): void {
+  authToken = token;
+}
+
+function authHeaders(base: Record<string, string> = {}): Record<string, string> {
+  return authToken ? { ...base, Authorization: `Bearer ${authToken}` } : base;
+}
+
+/** A 401 means this session is finished. Announced once, centrally, so no
+ *  screen has to remember to handle it — the auth context listens and signs
+ *  out. Without this a expired token leaves every panel silently empty. */
+function sessionEnded(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('aquaflow:unauthorised'));
+  }
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -33,7 +58,10 @@ async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
   const url = `${BASE}${path}`;
   let res: Response;
   try {
-    res = await fetch(url, { signal, headers: { Accept: 'application/json' } });
+    res = await fetch(url, {
+      signal,
+      headers: authHeaders({ Accept: 'application/json' }),
+    });
   } catch (cause) {
     // A failed fetch is almost always "the API is not running". Say that,
     // rather than surfacing the browser's generic "Failed to fetch".
@@ -45,6 +73,7 @@ async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
     );
   }
   if (!res.ok) {
+    if (res.status === 401) sessionEnded();
     throw new ApiError(`${res.status} ${res.statusText}`, res.status, url);
   }
   return res.json() as Promise<T>;
@@ -365,11 +394,12 @@ export async function submitManualReading(body: {
 }): Promise<{ status: string; value: number; parameter: string; unit: string }> {
   const res = await fetch(`${BASE}/manual/readings`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
+    if (res.status === 401) sessionEnded();
     // The API explains why in `detail`. Surfacing that verbatim is more use
     // than "request failed" — it says which rule the entry broke.
     throw new ApiError(data.detail ?? `${res.status} ${res.statusText}`,
@@ -405,9 +435,11 @@ export async function uploadReadings(
     ...(opts.plant ? { plant: opts.plant } : {}),
     ...(opts.enteredBy ? { entered_by: opts.enteredBy } : {}),
   });
-  const res = await fetch(`${BASE}/upload/readings?${qs}`, { method: 'POST', body: form });
+  const res = await fetch(`${BASE}/upload/readings?${qs}`,
+                        { method: 'POST', body: form, headers: authHeaders() });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
+    if (res.status === 401) sessionEnded();
     throw new ApiError(data.detail ?? `${res.status} ${res.statusText}`,
                        res.status, `${BASE}/upload/readings`);
   }
@@ -442,11 +474,12 @@ export async function submitManualBatch(body: {
 }): Promise<BatchResult> {
   const res = await fetch(`${BASE}/manual/readings/batch`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
+    if (res.status === 401) sessionEnded();
     throw new ApiError(data.detail ?? `${res.status} ${res.statusText}`,
                        res.status, `${BASE}/manual/readings/batch`);
   }
@@ -508,11 +541,12 @@ export async function acknowledgeInsight(body: {
 }): Promise<Acknowledgement & { insightId: string }> {
   const res = await fetch(`${BASE}/insights/acknowledgements`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
+    if (res.status === 401) sessionEnded();
     throw new ApiError(data.detail ?? `${res.status} ${res.statusText}`,
                        res.status, `${BASE}/insights/acknowledgements`);
   }
@@ -558,11 +592,12 @@ export async function editManualBatch(batchId: number, body: {
 }): Promise<{ batchId: number; updated: number; results: BatchRow[] }> {
   const res = await fetch(`${BASE}/manual/batches/${batchId}`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
+    if (res.status === 401) sessionEnded();
     throw new ApiError(data.detail ?? `${res.status} ${res.statusText}`,
                        res.status, `${BASE}/manual/batches/${batchId}`);
   }
@@ -578,4 +613,44 @@ export interface AckHistoryEntry {
 /** Every acknowledgement, newest first. */
 export async function fetchAckHistory(limit = 50, signal?: AbortSignal) {
   return get<AckHistoryEntry[]>(`/insights/acknowledgements/history?limit=${limit}`, signal);
+}
+
+export interface Me {
+  id: string;
+  name: string;
+  email: string;
+  role: 'admin' | 'manager' | 'operator' | 'viewer';
+  plants: string[];
+  allPlants: boolean;
+}
+
+/** Who the API thinks we are. The authority on role and plant scope. */
+export async function fetchMe(signal?: AbortSignal): Promise<Me> {
+  return get<Me>('/auth/me', signal);
+}
+
+async function postPlain<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(data.detail ?? `${res.status} ${res.statusText}`,
+                       res.status, `${BASE}${path}`);
+  }
+  return data as T;
+}
+
+/** Sign in. Deliberately does not attach the current token — signing in while
+ *  holding a stale one should not depend on that one still being valid. */
+export async function signIn(email: string, password: string) {
+  return postPlain<{ token: string }>('/auth/login', { email, password });
+}
+
+export async function signUp(email: string, password: string, name: string) {
+  return postPlain<{ email: string; role: string; token: string | null;
+                     needsConfirmation: boolean }>(
+    '/auth/signup', { email, password, name });
 }

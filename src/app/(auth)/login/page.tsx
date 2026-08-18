@@ -19,10 +19,8 @@ export default function LoginPage() {
     setIsSubmitting(true);
 
     try {
-      const success = await login(email, password);
-      if (!success) {
-        setError('Invalid email or password');
-      }
+      const message = await login(email, password);
+      if (message) setError(message);
     } catch {
       setError('An error occurred. Please try again.');
     } finally {

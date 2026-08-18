@@ -2,12 +2,32 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
+import { setAuthToken, signIn, signUp, fetchMe, ApiError } from '@/lib/api/client';
 
+/**
+ * The signed-in session.
+ *
+ * Credentials are checked by the API, which delegates to the identity
+ * provider; what comes back is a token this app stores and sends. Two things
+ * follow from that and both matter:
+ *
+ *   * The role here is for rendering only. It arrives from /auth/me, which
+ *     reads it from the database — but the API enforces it again on every
+ *     request, so a tampered value in this browser changes what is drawn and
+ *     nothing about what is permitted.
+ *
+ *   * A token can be rejected while the app is open — expired, or the account
+ *     deactivated. Any 401 from any call ends the session rather than leaving
+ *     a screen that quietly fails to load.
+ */
 export interface User {
   id: string;
   name: string;
   email: string;
   role: 'admin' | 'manager' | 'operator' | 'viewer';
+  /** Plants this account may see. Empty means all of them. */
+  plants: string[];
+  allPlants: boolean;
   avatar?: string;
 }
 
@@ -15,27 +35,21 @@ interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<string | null>;
+  register: (email: string, password: string, name: string) => Promise<string | null>;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Users for authentication
-const MOCK_USERS: Record<string, { password: string; user: User }> = {
-  'admin@yozytech.com': {
-    password: 'AquaFlow@dmin#1',
-    user: {
-      id: 'user-1',
-      name: 'Admin User',
-      email: 'admin@yozytech.com',
-      role: 'admin',
-    },
-  },
-};
+const PUBLIC_PATHS = ['/login', '/signup', '/forgot-password', '/reset-password'];
+const TOKEN_KEY = 'aquaflow_token';
 
-const PUBLIC_PATHS = ['/login', '/forgot-password', '/reset-password'];
-const SESSION_KEY = 'aquaflow_session';
+/** Trailing slashes are on (static export), so '/login' never matches. */
+const isPublic = (pathname: string | null) => {
+  const p = (pathname || '/').replace(/\/+$/, '') || '/';
+  return PUBLIC_PATHS.some((allowed) => p === allowed || p.startsWith(allowed + '/'));
+};
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -43,81 +57,101 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
-  // Check for existing session on mount
+  // Restore a session on load. The token is only trusted as far as /auth/me
+  // accepting it — a stored token that has expired must not leave the app
+  // looking signed in.
   useEffect(() => {
-    const checkSession = () => {
-      try {
-        const session = localStorage.getItem(SESSION_KEY);
-        if (session) {
-          const parsed = JSON.parse(session);
-          // Check if session is expired (24 hours)
-          if (parsed.expiresAt > Date.now()) {
-            setUser(parsed.user);
-          } else {
-            localStorage.removeItem(SESSION_KEY);
-          }
-        }
-      } catch {
-        localStorage.removeItem(SESSION_KEY);
-      }
-      setIsLoading(false);
-    };
+    let live = true;
+    const stored = typeof window !== 'undefined'
+      ? localStorage.getItem(TOKEN_KEY) : null;
 
-    checkSession();
+    if (!stored) {
+      setIsLoading(false);
+      return;
+    }
+
+    setAuthToken(stored);
+    fetchMe()
+      .then((me) => { if (live) setUser(me); })
+      .catch(() => {
+        if (!live) return;
+        localStorage.removeItem(TOKEN_KEY);
+        setAuthToken(null);
+        setUser(null);
+      })
+      .finally(() => { if (live) setIsLoading(false); });
+
+    return () => { live = false; };
   }, []);
 
-  // Redirect logic
+  // A 401 from anywhere means this session is over. Registered once, so a
+  // component does not have to remember to handle it.
+  useEffect(() => {
+    const onUnauthorised = () => {
+      localStorage.removeItem(TOKEN_KEY);
+      setAuthToken(null);
+      setUser(null);
+      if (!isPublic(pathname)) router.replace('/login');
+    };
+    window.addEventListener('aquaflow:unauthorised', onUnauthorised);
+    return () => window.removeEventListener('aquaflow:unauthorised', onUnauthorised);
+  }, [pathname, router]);
+
   useEffect(() => {
     if (isLoading) return;
-
-    // Compare without a trailing slash. The static export is built with
-    // trailingSlash: true, so the browser is on "/login/" while this test read
-    // "/login" — the equality failed, the post-login redirect never fired, and
-    // signing in appeared to do nothing at all. The session was created
-    // correctly; only the navigation was lost, which is the hardest kind of
-    // failure to spot because nothing errors.
-    const path = pathname?.replace(/\/+$/, '') || '/';
-    const isPublicPath = PUBLIC_PATHS.some(p => path.startsWith(p));
-
-    if (!user && !isPublicPath) {
-      router.push('/login');
-    } else if (user && isPublicPath) {
-      router.push('/dashboard-v2');
-    }
+    if (!user && !isPublic(pathname)) router.replace('/login');
+    if (user && isPublic(pathname)) router.replace('/dashboard-v2');
   }, [user, isLoading, pathname, router]);
 
-  const login = async (email: string, password: string): Promise<boolean> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    const mockUser = MOCK_USERS[email.toLowerCase()];
-    if (mockUser && mockUser.password === password) {
-      const session = {
-        user: mockUser.user,
-        expiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
-      };
-      localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-      setUser(mockUser.user);
-      return true;
+  /** Returns null on success, or a message to show. */
+  const login = async (email: string, password: string): Promise<string | null> => {
+    try {
+      const { token } = await signIn(email, password);
+      localStorage.setItem(TOKEN_KEY, token);
+      setAuthToken(token);
+      // Sign-in proves who they are; /auth/me says what they may do. An
+      // account with no grant authenticates and then gets 403 here, which is
+      // the correct and non-obvious case.
+      const me = await fetchMe();
+      setUser(me);
+      return null;
+    } catch (e) {
+      localStorage.removeItem(TOKEN_KEY);
+      setAuthToken(null);
+      setUser(null);
+      const err = e as ApiError;
+      if (err.status === 403) {
+        return 'This account has not been granted access yet. An administrator needs to approve it.';
+      }
+      return err.message || 'Could not sign in';
     }
-    return false;
+  };
+
+  const register = async (email: string, password: string, name: string) => {
+    try {
+      const res = await signUp(email, password, name);
+      if (res.token) {
+        localStorage.setItem(TOKEN_KEY, res.token);
+        setAuthToken(res.token);
+        setUser(await fetchMe());
+        return null;
+      }
+      return 'Account created. Check your email to confirm it, then sign in.';
+    } catch (e) {
+      return (e as ApiError).message || 'Could not create the account';
+    }
   };
 
   const logout = () => {
-    localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(TOKEN_KEY);
+    setAuthToken(null);
     setUser(null);
-    router.push('/login');
+    router.replace('/login');
   };
 
   return (
     <AuthContext.Provider
-      value={{
-        user,
-        isLoading,
-        isAuthenticated: !!user,
-        login,
-        logout,
-      }}
+      value={{ user, isLoading, isAuthenticated: !!user, login, register, logout }}
     >
       {children}
     </AuthContext.Provider>
@@ -125,9 +159,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 
 export function useAuth() {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used within an AuthProvider');
+  return ctx;
 }
