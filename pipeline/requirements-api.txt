@@ -5,3 +5,6 @@ uvicorn[standard]>=0.32,<0.33
 psycopg[binary]>=3.2,<3.3
 # FastAPI needs this to accept a file upload.
 python-multipart>=0.0.9
+# Verifying the Supabase project JWT. HS256 with the project secret;
+# no network call, so a slow identity provider cannot stall a request.
+pyjwt>=2.9,<3

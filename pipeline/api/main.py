@@ -17,6 +17,7 @@ that looks like one would invite a command that silently never arrives.
 from __future__ import annotations
 
 import os
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -25,7 +26,11 @@ import sys
 from pathlib import Path
 
 import psycopg
-from fastapi import Body, FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import (Body, Depends, FastAPI, File, HTTPException, Query,
+                     UploadFile)
+
+from api import auth, identity
+from api.auth import Principal
 
 # The pipeline package sits beside this module in the image.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
@@ -57,6 +62,9 @@ async def lifespan(app: FastAPI):
         cur.execute("SELECT 1")          # fail at startup, not on first request
     yield
 
+
+auth.check_configured()
+identity.check_dev_login()
 
 app = FastAPI(title="MWTS readings API", version="0.1.0", lifespan=lifespan)
 
@@ -139,6 +147,45 @@ def q(sql: str, params: tuple = ()) -> list[dict[str, Any]]:
         return cur.fetchall()
 
 
+#: WHERE fragment restricting a query to the caller's plants. NULL means every
+#: plant, so a fleet user and a site user run the same SQL with a different
+#: parameter — there is no branch that could accidentally drop the filter.
+SCOPE_SQL = "(%s::text[] IS NULL OR {col} = ANY(%s))"
+
+
+def scope(user: Principal) -> list | None:
+    """The parameter for SCOPE_SQL. None means unrestricted."""
+    return None if user.all_plants else list(user.plant_codes)
+
+
+def _find_user(auth_id: str, email: str) -> dict | None:
+    """The app_users row for a Supabase identity.
+
+    Matched on auth_id first. Falling back to email links an account an
+    administrator created before the person signed up; after that the id is
+    authoritative, so changing an email address cannot take over another row.
+    """
+    rows = q("""
+        SELECT user_id, email, name, role, status, plant_codes, auth_id
+        FROM app_users
+        WHERE auth_id = %s OR (auth_id IS NULL AND lower(email) = lower(%s))
+        ORDER BY (auth_id IS NOT NULL) DESC
+        LIMIT 1
+    """, (auth_id, email))
+    if not rows:
+        return None
+    row = rows[0]
+    if row["auth_id"] is None:
+        with psycopg.connect(DSN) as conn, conn.cursor() as cur:
+            cur.execute("UPDATE app_users SET auth_id = %s, last_login = now() "
+                        "WHERE user_id = %s", (auth_id, row["user_id"]))
+            conn.commit()
+    return row
+
+
+auth.set_user_lookup(_find_user)
+
+
 def plant_id(code: str) -> str:
     """'WTP-01' -> 'plant-1'. The dashboard's ids predate the plant codes."""
     return f"plant-{int(code.split('-')[1])}"
@@ -177,6 +224,105 @@ def comm_status(age_seconds: int | None, poll_seconds: int,
     return "offline"
 
 
+@app.post("/auth/signup", status_code=201)
+def signup(payload: dict = Body(...)) -> dict:
+    """Create an account.
+
+    Signing up grants nothing. A new account gets the lowest role and no
+    plants, and an administrator raises it — otherwise anyone who can reach
+    this endpoint can read the fleet.
+
+    The first account is the exception, because somebody has to be able to
+    promote the second.
+    """
+    email = (payload.get("email") or "").strip().lower()
+    password = payload.get("password") or ""
+    name = (payload.get("name") or "").strip()
+
+    if "@" not in email or "." not in email.split("@")[-1]:
+        raise HTTPException(400, "a valid email address is required")
+    # Supabase enforces its own minimum; this one is ours, stated so the
+    # message comes from us rather than from a provider error.
+    if len(password) < 10:
+        raise HTTPException(400, "the password must be at least 10 characters")
+
+    created = identity.sign_up(email, password)
+
+    if created.get("dev"):
+        # Local development: no identity provider, so the account is created
+        # here and given a token directly.
+        auth_id = str(uuid.uuid4())
+        with psycopg.connect(DSN, row_factory=dict_row) as conn, conn.cursor() as cur:
+            cur.execute("SELECT claim_first_admin(%s, %s, %s) AS role",
+                        (auth_id, email, name))
+            role = cur.fetchone()["role"]
+            conn.commit()
+        return {"email": email, "role": role,
+                "token": identity.dev_token_for(auth_id, email),
+                "needsConfirmation": False}
+
+    with psycopg.connect(DSN, row_factory=dict_row) as conn, conn.cursor() as cur:
+        cur.execute("SELECT claim_first_admin(%s, %s, %s) AS role",
+                    (created["auth_id"], email, name))
+        role = cur.fetchone()["role"]
+        conn.commit()
+
+    return {"email": email, "role": role, "token": created.get("token"),
+            "needsConfirmation": created["needs_confirmation"]}
+
+
+@app.post("/auth/login")
+def login(payload: dict = Body(...)) -> dict:
+    """Exchange credentials for a token."""
+    email = (payload.get("email") or "").strip().lower()
+    password = payload.get("password") or ""
+    if not email or not password:
+        raise HTTPException(400, "email and password are required")
+
+    result = identity.sign_in(email, password)
+
+    if result.get("dev"):
+        rows = q("""SELECT user_id, auth_id, email, name, role, status,
+                           plant_codes
+                    FROM app_users WHERE lower(email) = lower(%s)""", (email,))
+        if not rows or rows[0]["status"] != "active":
+            raise HTTPException(401, "email or password is incorrect")
+        row = rows[0]
+        auth_id = str(row["auth_id"] or uuid.uuid4())
+        with psycopg.connect(DSN) as conn, conn.cursor() as cur:
+            cur.execute("UPDATE app_users SET auth_id = %s, last_login = now() "
+                        "WHERE user_id = %s", (auth_id, row["user_id"]))
+            conn.commit()
+        return {"token": identity.dev_token_for(auth_id, row["email"]),
+                "user": {"id": str(row["user_id"]), "email": row["email"],
+                         "name": row["name"], "role": row["role"],
+                         "plants": row["plant_codes"] or []}}
+
+    # Authenticated by the provider. Whether this system knows them is a
+    # separate question, and /auth/me is where it gets answered.
+    with psycopg.connect(DSN) as conn, conn.cursor() as cur:
+        cur.execute("UPDATE app_users SET last_login = now() "
+                    "WHERE lower(email) = lower(%s)", (email,))
+        conn.commit()
+    return {"token": result["token"]}
+
+
+@app.get("/auth/me")
+def me(user: Principal = Depends(auth.current_user)) -> dict:
+    """The caller, as this system sees them.
+
+    The frontend needs the role and plant scope to decide what to render. It is
+    served from the token rather than trusted from the client — a browser that
+    claims to be an administrator is still a viewer here.
+    """
+    return {
+        "id": user.user_id, "email": user.email, "name": user.name,
+        "role": user.role,
+        "plants": list(user.plant_codes),
+        "allPlants": user.all_plants,
+    }
+
+
 @app.get("/health")
 def health() -> dict:
     rows = q("SELECT count(*) AS n FROM readings")
@@ -184,7 +330,8 @@ def health() -> dict:
 
 
 @app.get("/plants")
-def plants() -> list[dict]:
+def plants(user: Principal = Depends(auth.current_user)) -> list[dict]:
+    _sc = scope(user)
     rows = q("""
         SELECT p.plant_code, p.name, p.region, p.poll_seconds,
                count(s.sensor_id)                             AS sensor_count,
@@ -194,9 +341,10 @@ def plants() -> list[dict]:
         FROM plants p
         LEFT JOIN sensors s USING (plant_code)
         LEFT JOIN latest_readings l USING (sensor_id)
+        WHERE (%s::text[] IS NULL OR p.plant_code = ANY(%s))
         GROUP BY p.plant_code, p.name, p.region, p.poll_seconds
         ORDER BY p.plant_code
-    """)
+    """, (_sc, _sc))
     now = datetime.now(timezone.utc)
     out = []
     for r in rows:
@@ -228,7 +376,7 @@ def plants() -> list[dict]:
 
 
 @app.get("/sensors")
-def all_sensors() -> list[dict]:
+def all_sensors(user: Principal = Depends(auth.current_user)) -> list[dict]:
     """Every configured sensor, across all plants.
 
     No history — the fleet views that need this render counts and status, not
@@ -239,6 +387,7 @@ def all_sensors() -> list[dict]:
     is configured but not reporting, which is the number a fleet view exists
     to show.
     """
+    _sc = scope(user)
     rows = q("""
         SELECT s.sensor_id, s.plant_code, s.tag, s.parameter, s.unit,
                s.location, s.stage, s.manual_entry,
@@ -249,8 +398,9 @@ def all_sensors() -> list[dict]:
         LEFT JOIN latest_readings l USING (sensor_id)
         LEFT JOIN threshold_bands b
                ON b.parameter = s.parameter AND b.stage = s.stage
+        WHERE (%s::text[] IS NULL OR s.plant_code = ANY(%s))
         ORDER BY s.plant_code, s.tag
-    """)
+    """, (_sc, _sc))
     now = datetime.now(timezone.utc)
     out = []
     for r in rows:
@@ -283,7 +433,9 @@ def all_sensors() -> list[dict]:
 
 
 @app.get("/plants/{pid}/sensors")
-def plant_sensors(pid: str, history_hours: int = Query(24, ge=0, le=168)) -> list[dict]:
+def plant_sensors(pid: str, history_hours: int = Query(24, ge=0, le=168),
+    user: Principal = Depends(auth.current_user),
+) -> list[dict]:
     """Every sensor at a plant, with enough recent history to draw a sparkline.
 
     History is fetched in ONE query for all sensors rather than per sensor.
@@ -377,6 +529,7 @@ def sensor_history(
     sensor_id: str,
     hours: int = Query(24, ge=1, le=8760),
     resolution: str = Query("auto", pattern="^(auto|raw|hourly|daily)$"),
+    user: Principal = Depends(auth.current_user),
 ) -> dict:
     """Trend data, downsampled to something a chart can actually draw.
 
@@ -425,13 +578,16 @@ def sensor_history(
 
 
 @app.get("/alerts")
-def alerts(limit: int = Query(50, ge=1, le=500)) -> list[dict]:
+def alerts(limit: int = Query(50, ge=1, le=500),
+    user: Principal = Depends(auth.current_user),
+) -> list[dict]:
     """Sensors currently outside their band, worst first.
 
     Derived from current state rather than the alerts table, which is not
     populated yet. Swap the source once alarm events are being written; the
     shape does not change.
     """
+    _sc = scope(user)
     rows = q("""
         SELECT s.sensor_id, s.plant_code, s.tag, s.parameter, s.unit,
                s.location, s.stage, l.ts, l.value, l.status, p.name AS plant_name,
@@ -442,9 +598,10 @@ def alerts(limit: int = Query(50, ge=1, le=500)) -> list[dict]:
         LEFT JOIN threshold_bands b
                ON b.parameter = s.parameter AND b.stage = s.stage
         WHERE l.status <> 'normal'
+          AND (%s::text[] IS NULL OR s.plant_code = ANY(%s))
         ORDER BY (l.status = 'critical') DESC, s.tag
         LIMIT %s
-    """, (limit,))
+    """, (_sc, _sc, limit))
     out = []
     for r in rows:
         high = r["warn_max"] is not None and r["value"] > r["warn_max"]
@@ -475,7 +632,9 @@ def alerts(limit: int = Query(50, ge=1, le=500)) -> list[dict]:
 
 @app.get("/alerts/trend")
 def alerts_trend(days: int = Query(7, ge=1, le=90),
-                 plant: str | None = Query(None)) -> list[dict]:
+                 plant: str | None = Query(None),
+    user: Principal = Depends(auth.current_user),
+) -> list[dict]:
     """Breaches per day, from the hourly rollup.
 
     Real counts, not a shape. The continuous aggregate already stores
@@ -515,7 +674,9 @@ def alerts_trend(days: int = Query(7, ge=1, le=90),
 
 
 @app.get("/alerts/hourly")
-def alerts_hourly(hours: int = Query(24, ge=1, le=168)) -> list[dict]:
+def alerts_hourly(hours: int = Query(24, ge=1, le=168),
+    user: Principal = Depends(auth.current_user),
+) -> list[dict]:
     """Breaches per hour over the most recent window of data.
 
     Anchored to the newest bucket, not now(): with ingestion behind, a
@@ -547,7 +708,7 @@ def alerts_hourly(hours: int = Query(24, ge=1, le=168)) -> list[dict]:
 
 
 @app.get("/gateways")
-def gateways() -> list[dict]:
+def gateways(user: Principal = Depends(auth.current_user)) -> list[dict]:
     """The gateways, with whether each is actually delivering.
 
     `lastFile` and `lastSeq` come from processed_files, so "online" here means
@@ -559,6 +720,7 @@ def gateways() -> list[dict]:
     poll, so a gap means a file was produced and never arrived — the one
     failure that leaves no error anywhere.
     """
+    _sc = scope(user)
     rows = q("""
         SELECT g.gateway_id, g.plant_code, g.model, g.count_low, g.count_high,
                g.quality_family, g.sends_scaled, p.name AS plant_name,
@@ -570,10 +732,11 @@ def gateways() -> list[dict]:
         FROM gateways g
         JOIN plants p USING (plant_code)
         LEFT JOIN processed_files f ON f.gateway_id = g.gateway_id
+        WHERE (%s::text[] IS NULL OR g.plant_code = ANY(%s))
         GROUP BY g.gateway_id, g.plant_code, g.model, g.count_low, g.count_high,
                  g.quality_family, g.sends_scaled, p.name, p.poll_seconds
         ORDER BY g.gateway_id
-    """)
+    """, (_sc, _sc))
     now = datetime.now(timezone.utc)
     out = []
     for r in rows:
@@ -682,6 +845,7 @@ async def upload_readings(
     plant: str | None = Query(None,
         description="plant-1 style id. Required when the same tag exists at "
                     "more than one plant, which is usual."),
+    user: Principal = Depends(auth.requires("operator")),
 ) -> dict:
     """Load readings from an uploaded file.
 
@@ -796,7 +960,9 @@ async def upload_readings(
 
 
 @app.get("/manual/drift")
-def manual_drift(hours: int = Query(72, ge=1, le=8760)) -> list[dict]:
+def manual_drift(hours: int = Query(72, ge=1, le=8760),
+    user: Principal = Depends(auth.current_user),
+) -> list[dict]:
     """Grab samples compared against the instrument that measures the same thing.
 
     An operator with a handheld meter checks the online probe. Neither reading
@@ -880,7 +1046,9 @@ def manual_drift(hours: int = Query(72, ge=1, le=8760)) -> list[dict]:
 
 
 @app.get("/insights")
-def insights(days: int = Query(30, ge=1, le=365), plant: str | None = Query(None)) -> dict:
+def insights(days: int = Query(30, ge=1, le=365), plant: str | None = Query(None),
+    user: Principal = Depends(auth.current_user),
+) -> dict:
     """Analytics over sensor data. Observations, not recommendations.
 
     Every figure here is counted from readings. Nothing is modelled, so nothing
@@ -889,6 +1057,7 @@ def insights(days: int = Query(30, ge=1, le=365), plant: str | None = Query(None
     quiet.
     """
     code = plant_code(plant) if plant else None
+    _sc = scope(user)
 
     # Breach rate by parameter and stage. Stage matters more than parameter:
     # 20 NTU is normal raw water and a failure in final water, so pooling them
@@ -902,20 +1071,22 @@ def insights(days: int = Query(30, ge=1, le=365), plant: str | None = Query(None
         JOIN sensors s USING (sensor_id)
         WHERE h.bucket > now() - make_interval(days => %s)
           AND (%s::text IS NULL OR s.plant_code = %s)
+          AND (%s::text[] IS NULL OR s.plant_code = ANY(%s))
         GROUP BY 1, 2
         HAVING sum(h.n) >= 20
         ORDER BY (sum(h.n_critical) + sum(h.n_warning))::float / sum(h.n) DESC,
                  sum(h.n_critical) DESC
         LIMIT 20
-    """, (days, code, code))
+    """, (days, code, code, _sc, _sc))
 
     estate = {(r["parameter"], r["stage"]): r for r in q("""
         SELECT parameter, stage, count(*) AS sensors,
                count(DISTINCT plant_code) AS plants
         FROM sensors
-        WHERE %s::text IS NULL OR plant_code = %s
+        WHERE (%s::text IS NULL OR plant_code = %s)
+          AND (%s::text[] IS NULL OR plant_code = ANY(%s))
         GROUP BY 1, 2
-    """, (code, code))}
+    """, (code, code, _sc, _sc))}
 
     # Individual instruments, so a single bad probe is not averaged away by the
     # five beside it reading correctly.
@@ -934,6 +1105,7 @@ def insights(days: int = Query(30, ge=1, le=365), plant: str | None = Query(None
                ON b.parameter = s.parameter AND b.stage = s.stage
         WHERE h.bucket > now() - make_interval(days => %s)
           AND (%s::text IS NULL OR s.plant_code = %s)
+          AND (%s::text[] IS NULL OR s.plant_code = ANY(%s))
         GROUP BY s.sensor_id, s.tag, s.parameter, s.location, s.stage,
                  p.name, s.plant_code, s.unit,
                  b.warn_min, b.warn_max, b.crit_min, b.crit_max
@@ -941,7 +1113,7 @@ def insights(days: int = Query(30, ge=1, le=365), plant: str | None = Query(None
         ORDER BY (sum(h.n_critical) + sum(h.n_warning))::float / sum(h.n) DESC,
                  sum(h.n) DESC
         LIMIT 12
-    """, (days, code, code))
+    """, (days, code, code, _sc, _sc))
 
     # Configured but silent. An instrument nobody is receiving is invisible on
     # every other screen — it simply has no tile — so it is worth counting in
@@ -953,7 +1125,8 @@ def insights(days: int = Query(30, ge=1, le=365), plant: str | None = Query(None
         FROM sensors s
         LEFT JOIN latest_readings l USING (sensor_id)
         WHERE NOT s.manual_entry AND (%s::text IS NULL OR s.plant_code = %s)
-    """, (code, code))[0]
+          AND (%s::text[] IS NULL OR s.plant_code = ANY(%s))
+    """, (code, code, _sc, _sc))[0]
 
     by_plant = q("""
         WITH silent AS (
@@ -964,6 +1137,7 @@ def insights(days: int = Query(30, ge=1, le=365), plant: str | None = Query(None
             FROM sensors s
             LEFT JOIN latest_readings l USING (sensor_id)
             WHERE NOT s.manual_entry AND (%s::text IS NULL OR s.plant_code = %s)
+          AND (%s::text[] IS NULL OR s.plant_code = ANY(%s))
             GROUP BY 1
         ),
         gw AS (
@@ -984,7 +1158,7 @@ def insights(days: int = Query(30, ge=1, le=365), plant: str | None = Query(None
         LEFT JOIN gw USING (plant_code)
         WHERE s.never + s.stopped > 0
         ORDER BY (s.never + s.stopped) DESC
-    """, (code, code))
+    """, (code, code, _sc, _sc))
 
     silent = q("""
         SELECT s.sensor_id, s.tag, s.parameter, s.location, s.plant_code,
@@ -995,9 +1169,10 @@ def insights(days: int = Query(30, ge=1, le=365), plant: str | None = Query(None
         WHERE NOT s.manual_entry
           AND (l.ts IS NULL OR l.ts < now() - interval '24 hours')
           AND (%s::text IS NULL OR s.plant_code = %s)
+          AND (%s::text[] IS NULL OR s.plant_code = ANY(%s))
         ORDER BY l.ts NULLS FIRST
         LIMIT 12
-    """, (code, code))
+    """, (code, code, _sc, _sc))
 
     # A reading that never moves within an hour, hour after hour, is the
     # signature of a held value: the probe has failed but the PLC keeps
@@ -1013,12 +1188,13 @@ def insights(days: int = Query(30, ge=1, le=365), plant: str | None = Query(None
         WHERE h.bucket > now() - make_interval(days => %s)
           AND h.min_value = h.max_value AND h.n > 1
           AND (%s::text IS NULL OR s.plant_code = %s)
+          AND (%s::text[] IS NULL OR s.plant_code = ANY(%s))
         GROUP BY s.sensor_id, s.tag, s.parameter, s.location, s.unit,
                  s.plant_code, p.name
         HAVING count(*) >= 6
         ORDER BY count(*) DESC
         LIMIT 12
-    """, (days, code, code))
+    """, (days, code, code, _sc, _sc))
 
     # How much the plant actually removes. The one number a treatment works
     # exists to produce: what came in against what went out, per parameter.
@@ -1039,6 +1215,7 @@ def insights(days: int = Query(30, ge=1, le=365), plant: str | None = Query(None
               AND s.parameter IN ('turbidity', 'TSS', 'COD', 'BOD', 'coliform',
                                   'iron', 'manganese', 'hardness')
               AND (%s::text IS NULL OR s.plant_code = %s)
+          AND (%s::text[] IS NULL OR s.plant_code = ANY(%s))
             GROUP BY 1, 2, 3, 4, 5
         )
         SELECT r.plant_code, r.plant_name, r.parameter, r.unit,
@@ -1051,7 +1228,7 @@ def insights(days: int = Query(30, ge=1, le=365), plant: str | None = Query(None
          AND f.stage = 'final'
         WHERE r.stage = 'raw' AND r.avg_value <> 0
         ORDER BY r.plant_name, r.parameter
-    """, (days, code, code))
+    """, (days, code, code, _sc, _sc))
 
     # Why readings were discarded on the way in — a property of the
     # instruments and the gateway, not of the water.
@@ -1131,7 +1308,9 @@ def insights(days: int = Query(30, ge=1, le=365), plant: str | None = Query(None
 
 
 @app.get("/insights/acknowledgements/history")
-def acknowledgement_history(limit: int = Query(50, ge=1, le=200)) -> list[dict]:
+def acknowledgement_history(limit: int = Query(50, ge=1, le=200),
+    user: Principal = Depends(auth.current_user),
+) -> list[dict]:
     """Every acknowledgement, newest first.
 
     The only history this screen can honestly show. Nothing was applied to the
@@ -1167,7 +1346,7 @@ def acknowledgement_history(limit: int = Query(50, ge=1, le=200)) -> list[dict]:
 
 
 @app.get("/insights/acknowledgements")
-def insight_acknowledgements() -> dict:
+def insight_acknowledgements(user: Principal = Depends(auth.current_user)) -> dict:
     """Current acknowledgement state, keyed by insight id.
 
     The latest row per insight. Earlier ones are kept — an insight raised again
@@ -1188,7 +1367,9 @@ def insight_acknowledgements() -> dict:
 
 
 @app.post("/insights/acknowledgements", status_code=201)
-def acknowledge_insight(payload: dict = Body(...)) -> dict:
+def acknowledge_insight(payload: dict = Body(...),
+    user: Principal = Depends(auth.requires("viewer")),
+) -> dict:
     """Record that somebody has seen an insight.
 
     An acknowledgement changes nothing at the plant — there is no write path,
@@ -1222,7 +1403,9 @@ def acknowledge_insight(payload: dict = Body(...)) -> dict:
 
 
 @app.get("/manual/sensors")
-def manual_sensors(plant: str | None = Query(None)) -> list[dict]:
+def manual_sensors(plant: str | None = Query(None),
+    user: Principal = Depends(auth.current_user),
+) -> list[dict]:
     """Parameters that accept a hand-entered reading.
 
     Lab results, mostly. They have no tag on any gateway, so the only way a
@@ -1254,7 +1437,9 @@ def manual_sensors(plant: str | None = Query(None)) -> list[dict]:
 
 
 @app.post("/manual/readings", status_code=201)
-def create_manual_reading(payload: dict = Body(...)) -> dict:
+def create_manual_reading(payload: dict = Body(...),
+    user: Principal = Depends(auth.requires("operator")),
+) -> dict:
     """Record a reading somebody measured by hand.
 
     Held to the same rules as an automatic one. A lab result is not exempt from
@@ -1354,7 +1539,9 @@ def create_manual_reading(payload: dict = Body(...)) -> dict:
 
 
 @app.post("/manual/readings/batch", status_code=201)
-def create_manual_batch(payload: dict = Body(...)) -> dict:
+def create_manual_batch(payload: dict = Body(...),
+    user: Principal = Depends(auth.requires("operator")),
+) -> dict:
     """Record a round of samples: one sample time, many parameters.
 
     A technician draws one sample and measures a dozen things from it. Those
@@ -1494,13 +1681,16 @@ def create_manual_batch(payload: dict = Body(...)) -> dict:
 
 
 @app.get("/manual/batches")
-def manual_batches(limit: int = Query(30, ge=1, le=200)) -> list[dict]:
+def manual_batches(limit: int = Query(30, ge=1, le=200),
+    user: Principal = Depends(auth.current_user),
+) -> list[dict]:
     """Bench sheet submissions, newest first.
 
     One row per round rather than per reading. A technician who entered twelve
     results entered them once, and a log that lists them twelve times makes it
     look like twelve separate acts.
     """
+    _sc = scope(user)
     rows = q("""
         SELECT b.batch_id, b.plant_code, p.name AS plant_name, b.sample_ts,
                b.entered_by, b.entered_at, b.note,
@@ -1518,11 +1708,12 @@ def manual_batches(limit: int = Query(30, ge=1, le=200)) -> list[dict]:
         FROM manual_batches b
         JOIN plants p USING (plant_code)
         LEFT JOIN readings r USING (batch_id)
+        WHERE (%s::text[] IS NULL OR b.plant_code = ANY(%s))
         GROUP BY b.batch_id, b.plant_code, p.name, b.sample_ts,
                  b.entered_by, b.entered_at, b.note
         ORDER BY b.entered_at DESC
         LIMIT %s
-    """, (limit,))
+    """, (_sc, _sc, limit))
     if not rows:
         return []
 
@@ -1564,7 +1755,9 @@ def manual_batches(limit: int = Query(30, ge=1, le=200)) -> list[dict]:
 
 
 @app.patch("/manual/batches/{batch_id}")
-def edit_manual_batch(batch_id: int, payload: dict = Body(...)) -> dict:
+def edit_manual_batch(batch_id: int, payload: dict = Body(...),
+    user: Principal = Depends(auth.requires("manager")),
+) -> dict:
     """Correct values in a submission.
 
     A mistyped lab result has to be fixable — the alternative is a wrong figure
@@ -1667,7 +1860,9 @@ def edit_manual_batch(batch_id: int, payload: dict = Body(...)) -> dict:
 
 
 @app.get("/manual/batches/{batch_id}/edits")
-def manual_batch_edits(batch_id: int) -> list[dict]:
+def manual_batch_edits(batch_id: int,
+    user: Principal = Depends(auth.current_user),
+) -> list[dict]:
     """Every correction made to a submission, oldest first."""
     rows = q("""
         SELECT e.sensor_id, s.parameter, s.location, s.unit,
@@ -1687,7 +1882,9 @@ def manual_batch_edits(batch_id: int) -> list[dict]:
 
 
 @app.get("/manual/readings")
-def manual_readings(limit: int = Query(50, ge=1, le=200)) -> list[dict]:
+def manual_readings(limit: int = Query(50, ge=1, le=200),
+    user: Principal = Depends(auth.current_user),
+) -> list[dict]:
     """Recently entered readings, newest first — the entry log."""
     rows = q("""
         SELECT r.sensor_id, s.tag, s.parameter, s.unit, s.location,
@@ -1711,19 +1908,20 @@ def manual_readings(limit: int = Query(50, ge=1, le=200)) -> list[dict]:
 
 
 @app.get("/users")
-def users() -> list[dict]:
+def users(user: Principal = Depends(auth.requires("admin"))) -> list[dict]:
     """Accounts on this system.
 
     Ours, not the client's — nobody sends a users table. It is seeded with the
     one account that exists and grows as administrators add people.
 
-    password_hash is never returned. It is not shown, not exported, and not
-    available to the browser even for the account making the request.
+    Credentials live in Supabase Auth, not here. auth_id says whether an
+    account has been linked to an identity — an administrator can create a
+    person before they have signed up, and until they do they cannot sign in.
     """
     rows = q("""
         SELECT user_id, email, name, role, status, plant_codes,
                last_login, created_at,
-               (password_hash IS NOT NULL) AS can_sign_in
+               (auth_id IS NOT NULL) AS can_sign_in
         FROM app_users ORDER BY name
     """)
     return [{
@@ -1744,7 +1942,9 @@ def users() -> list[dict]:
 
 @app.get("/knowledge")
 def knowledge(q_text: str | None = Query(None, alias="q"),
-              limit: int = Query(50, ge=1, le=200)) -> list[dict]:
+              limit: int = Query(50, ge=1, le=200),
+    user: Principal = Depends(auth.current_user),
+) -> list[dict]:
     """Procedures and troubleshooting notes.
 
     Content the client authors and we store. Empty until somebody writes
@@ -1779,7 +1979,9 @@ def knowledge(q_text: str | None = Query(None, alias="q"),
 
 
 @app.get("/audit")
-def audit(limit: int = Query(100, ge=1, le=500)) -> list[dict]:
+def audit(limit: int = Query(100, ge=1, le=500),
+    user: Principal = Depends(auth.requires("admin")),
+) -> list[dict]:
     """What this system did, and when.
 
     Not plant commands — there is no write path, so there are none to record.
@@ -1827,7 +2029,9 @@ def audit(limit: int = Query(100, ge=1, le=500)) -> list[dict]:
 
 
 @app.get("/energy")
-def energy(hours: int = Query(24, ge=1, le=8760)) -> dict:
+def energy(hours: int = Query(24, ge=1, le=8760),
+    user: Principal = Depends(auth.current_user),
+) -> dict:
     """Consumption per motor control centre, plus instantaneous load.
 
     Consumption comes from counter differences, never from the counter itself:
@@ -1878,7 +2082,7 @@ def energy(hours: int = Query(24, ge=1, le=8760)) -> dict:
 
 
 @app.get("/equipment")
-def equipment() -> list[dict]:
+def equipment(user: Principal = Depends(auth.current_user)) -> list[dict]:
     """Pumps, blowers and valves, assembled from their tags.
 
     There is no equipment table. A plant's asset register lives in a CMMS, and
@@ -1889,6 +2093,7 @@ def equipment() -> list[dict]:
     XS-P-101 / XA-P-101 / KQ-P-101 are three views of one pump. Grouping by the
     suffix reconstructs the asset without inventing anything.
     """
+    _sc = scope(user)
     rows = q("""
         SELECT s.tag, s.parameter, s.location, s.plant_code, s.stage,
                p.name AS plant_name, l.value, l.ts, l.status
@@ -1897,8 +2102,9 @@ def equipment() -> list[dict]:
         LEFT JOIN latest_readings l USING (sensor_id)
         WHERE s.parameter IN ('run_status','fault','run_hours','start_count',
                               'valve_open','valve_closed')
+          AND (%s::text[] IS NULL OR s.plant_code = ANY(%s))
         ORDER BY s.tag
-    """)
+    """, (_sc, _sc))
 
     assets: dict[str, dict] = {}
     for r in rows:
@@ -1950,7 +2156,9 @@ def equipment() -> list[dict]:
 
 
 @app.get("/kpis/quality")
-def kpis_quality(hours: int = Query(24, ge=1, le=168)) -> dict:
+def kpis_quality(hours: int = Query(24, ge=1, le=168),
+    user: Principal = Depends(auth.current_user),
+) -> dict:
     """Compliance: the share of readings inside their alarm band.
 
     A defensible Water Quality Index needs a definition — which parameters,
@@ -1980,7 +2188,7 @@ def kpis_quality(hours: int = Query(24, ge=1, le=168)) -> dict:
 
 
 @app.get("/kpis/live")
-def kpis_live() -> dict:
+def kpis_live(user: Principal = Depends(auth.current_user)) -> dict:
     """Plant-floor KPI strip: current average per parameter, across the estate.
 
     Averages only sensors that are actually reporting. Including silent ones as
@@ -2012,7 +2220,7 @@ def kpis_live() -> dict:
 
 
 @app.get("/kpis")
-def kpis() -> dict:
+def kpis(user: Principal = Depends(auth.current_user)) -> dict:
     p = q("""SELECT count(*) AS total,
                     count(*) FILTER (WHERE ok) AS online
              FROM (SELECT p.plant_code,
