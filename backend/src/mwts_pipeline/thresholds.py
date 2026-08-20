@@ -6,7 +6,7 @@ a filter outlet. Under one shared limit the intake alarms continuously until
 operators mute the parameter — and the genuine failure is muted with it.
 
 Limits therefore belong to the sensor, resolved from where it sits in the
-treatment train. Ported from git/aquaflow/src/lib/thresholds.ts; the two must
+treatment train. Ported from frontend/src/lib/thresholds.ts; the two must
 not diverge, because the version the dashboard uses would stop being the
 version that raised the alert.
 """

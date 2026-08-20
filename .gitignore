@@ -1,7 +1,7 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
-/node_modules
+node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -11,14 +11,14 @@
 !.yarn/versions
 
 # testing
-/coverage
+coverage/
 
 # next.js
-/.next/
-/out/
+.next/
+out/
 
 # production
-/build
+build/
 
 # misc
 .DS_Store
@@ -47,7 +47,7 @@ next-env.d.ts
 UIUX-IMPROVEMENTS.md
 docs/
 feature-overview.html
-public/presentation.html
+**/public/presentation.html
 nul
 
 # local verification scripts
@@ -55,6 +55,9 @@ nul
 .menu.mjs
 .verify*.mjs
 .pdf*.mjs
+
+# Anchors are deliberately absent above: the dashboard lives in frontend/
+# and the API in backend/, so these must match at any depth.
 
 # ── backend ─────────────────────────────────────────────────────────────
 __pycache__/
