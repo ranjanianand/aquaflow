@@ -42,13 +42,26 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const PUBLIC_PATHS = ['/login', '/signup', '/forgot-password', '/reset-password'];
+// Reachable without a session. '/' is the landing page — a visitor should be
+// told what this is before being asked for a password.
+const PUBLIC_PATHS = ['/', '/login', '/signup', '/forgot-password', '/reset-password'];
+
+// Public, but signing in does not make it wrong to be here. The landing page
+// offers a signed-in visitor the dashboard rather than shoving them at it.
+const STAY_PUT = ['/'];
 const TOKEN_KEY = 'aquaflow_token';
 
 /** Trailing slashes are on (static export), so '/login' never matches. */
+const normalise = (pathname: string | null) =>
+  (pathname || '/').replace(/\/+$/, '') || '/';
+
 const isPublic = (pathname: string | null) => {
-  const p = (pathname || '/').replace(/\/+$/, '') || '/';
-  return PUBLIC_PATHS.some((allowed) => p === allowed || p.startsWith(allowed + '/'));
+  const p = normalise(pathname);
+  // '/' must match exactly: startsWith('/' + '/') is never true, but a bare
+  // prefix test on '/' would let every path through as public.
+  return PUBLIC_PATHS.some(
+    (allowed) => p === allowed
+              || (allowed !== '/' && p.startsWith(allowed + '/')));
 };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -62,24 +75,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // looking signed in.
   useEffect(() => {
     let live = true;
-    const stored = typeof window !== 'undefined'
-      ? localStorage.getItem(TOKEN_KEY) : null;
 
-    if (!stored) {
-      setIsLoading(false);
-      return;
-    }
+    (async () => {
+      const stored = typeof window !== 'undefined'
+        ? localStorage.getItem(TOKEN_KEY) : null;
 
-    setAuthToken(stored);
-    fetchMe()
-      .then((me) => { if (live) setUser(me); })
-      .catch(() => {
+      if (!stored) {
+        if (live) setIsLoading(false);
+        return;
+      }
+
+      setAuthToken(stored);
+      try {
+        const me = await fetchMe();
+        if (live) setUser(me);
+      } catch {
         if (!live) return;
         localStorage.removeItem(TOKEN_KEY);
         setAuthToken(null);
         setUser(null);
-      })
-      .finally(() => { if (live) setIsLoading(false); });
+      } finally {
+        if (live) setIsLoading(false);
+      }
+    })();
 
     return () => { live = false; };
   }, []);
@@ -100,7 +118,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (isLoading) return;
     if (!user && !isPublic(pathname)) router.replace('/login');
-    if (user && isPublic(pathname)) router.replace('/dashboard-v2');
+    if (user && isPublic(pathname) && !STAY_PUT.includes(normalise(pathname))) {
+      router.replace('/dashboard-v2');
+    }
   }, [user, isLoading, pathname, router]);
 
   /** Returns null on success, or a message to show. */
