@@ -23,11 +23,37 @@ import jwt
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-# Supabase signs project JWTs with this. Without it the API cannot verify
-# anything, and starting up in that state would mean serving every request
-# unauthenticated — so it refuses instead. See check_configured().
+# Supabase signs project tokens one of two ways, and which one is not a
+# choice we make:
+#
+#   ES256 with an asymmetric key, verified against the public keys the project
+#   publishes at /.well-known/jwks.json. This is what new projects do, and the
+#   token carries a `kid` naming the key.
+#
+#   HS256 with a shared secret, for older projects and for local development
+#   where there is no identity provider at all.
+#
+# Both are accepted. The token's own header decides, so a project that rotates
+# to asymmetric keys keeps working without a code change — which is exactly the
+# migration that broke this the first time.
 JWT_SECRET = os.environ.get("SUPABASE_JWT_SECRET", "")
 JWT_AUDIENCE = os.environ.get("SUPABASE_JWT_AUDIENCE", "authenticated")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
+
+#: Public keys, fetched once and cached. PyJWKClient handles the caching and
+#: refetches when it meets a `kid` it does not know, which is what makes key
+#: rotation a non-event.
+_jwks: "jwt.PyJWKClient | None" = None
+
+
+def _jwks_client() -> "jwt.PyJWKClient":
+    global _jwks
+    if _jwks is None:
+        if not SUPABASE_URL:
+            raise HTTPException(500, "SUPABASE_URL is not set")
+        _jwks = jwt.PyJWKClient(
+            SUPABASE_URL + "/auth/v1/.well-known/jwks.json", cache_keys=True)
+    return _jwks
 
 # Set only for local development against a stack with no identity provider.
 # Never true in a deployed environment: it makes every request an administrator.
@@ -66,26 +92,44 @@ def check_configured() -> None:
     """
     if DEV_NO_AUTH:
         return
-    if not JWT_SECRET:
+    # Either route is enough: a project URL gives public keys, a shared secret
+    # gives HS256. With neither, every token would be unverifiable and the API
+    # would answer nobody — or, worse, be tempted to answer everybody.
+    if not JWT_SECRET and not SUPABASE_URL:
         raise RuntimeError(
-            "SUPABASE_JWT_SECRET is not set. Set it, or set DEV_NO_AUTH=1 for "
-            "local development only.")
+            "Set SUPABASE_URL (asymmetric keys) or SUPABASE_JWT_SECRET "
+            "(shared secret), or DEV_NO_AUTH=1 for local development only.")
 
 
 def _decode(token: str) -> dict[str, Any]:
+    # Defaults, stated so that turning one off is a visible decision.
+    opts = {"require": ["exp", "sub"], "verify_exp": True,
+            "verify_signature": True}
     try:
-        return jwt.decode(
-            token, JWT_SECRET, algorithms=["HS256"], audience=JWT_AUDIENCE,
-            # Defaults, stated so that turning one off is a visible decision.
-            options={"require": ["exp", "sub"], "verify_exp": True,
-                     "verify_signature": True},
-        )
+        header = jwt.get_unverified_header(token)
+        alg = header.get("alg", "")
+
+        # "none" is an algorithm a token can ask for. Refusing it explicitly
+        # rather than relying on the library's default: this is the oldest
+        # trick against a JWT verifier and the failure is total.
+        if alg not in ("HS256", "ES256"):
+            raise jwt.InvalidTokenError("unsupported algorithm")
+
+        if alg == "ES256":
+            key = _jwks_client().get_signing_key_from_jwt(token).key
+            return jwt.decode(token, key, algorithms=["ES256"],
+                              audience=JWT_AUDIENCE, options=opts)
+
+        if not JWT_SECRET:
+            raise jwt.InvalidTokenError("no shared secret configured")
+        return jwt.decode(token, JWT_SECRET, algorithms=["HS256"],
+                          audience=JWT_AUDIENCE, options=opts)
     except jwt.ExpiredSignatureError:
-        raise HTTPException(401, "session expired")
+        raise HTTPException(401, "Your session has expired. Sign in again.")
     except jwt.InvalidTokenError:
         # Deliberately not saying which part failed. A caller probing the API
         # learns nothing from "bad signature" versus "wrong audience".
-        raise HTTPException(401, "not authenticated")
+        raise HTTPException(401, "Not authenticated")
 
 
 #: Injected by main.py so this module does not import the database layer and
@@ -113,13 +157,13 @@ def current_user(
         return DEV_PRINCIPAL
 
     if creds is None or not creds.credentials:
-        raise HTTPException(401, "not authenticated")
+        raise HTTPException(401, "Not authenticated")
 
     claims = _decode(creds.credentials)
     auth_id = str(claims.get("sub") or "")
     email = str(claims.get("email") or "")
     if not auth_id:
-        raise HTTPException(401, "not authenticated")
+        raise HTTPException(401, "Not authenticated")
 
     if _lookup is None:                       # pragma: no cover - wiring error
         raise HTTPException(500, "user lookup is not configured")
@@ -128,9 +172,9 @@ def current_user(
     if row is None:
         # Authenticated by Supabase but unknown here. That is a real state —
         # somebody signed up and no administrator has granted them anything.
-        raise HTTPException(403, "this account has not been granted access")
+        raise HTTPException(403, "This account has not been granted access yet")
     if row["status"] != "active":
-        raise HTTPException(403, "this account is not active")
+        raise HTTPException(403, "This account is not active")
 
     return Principal(
         user_id=str(row["user_id"]),

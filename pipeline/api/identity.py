@@ -65,10 +65,10 @@ def _post(path: str, body: dict[str, Any], *, key: str | None = None) -> dict:
         # does not pass that on: it tells an attacker which addresses are real.
         msg = detail.get("msg") or detail.get("error_description") or "sign-in failed"
         if e.code in (400, 401, 403):
-            raise HTTPException(401, "email or password is incorrect")
+            raise HTTPException(401, "Email or password is incorrect")
         raise HTTPException(502, "identity provider error: %s" % msg)
     except urllib.error.URLError as e:
-        raise HTTPException(502, "cannot reach the identity provider: %s" % e.reason)
+        raise HTTPException(502, "Cannot reach the identity provider: %s" % e.reason)
 
 
 def _dev_token(auth_id: str, email: str) -> str:
@@ -84,13 +84,13 @@ def sign_in(email: str, password: str) -> dict:
         # Caller resolves the account; a token is issued for whoever it is.
         return {"dev": True}
     if not configured():
-        raise HTTPException(503, "authentication is not configured on this server")
+        raise HTTPException(503, "Authentication is not configured on this server")
 
     data = _post("/auth/v1/token?grant_type=password",
                  {"email": email, "password": password})
     token = data.get("access_token")
     if not token:
-        raise HTTPException(401, "email or password is incorrect")
+        raise HTTPException(401, "Email or password is incorrect")
     return {"token": token,
             "auth_id": (data.get("user") or {}).get("id"),
             "expires_in": data.get("expires_in")}
@@ -101,13 +101,13 @@ def sign_up(email: str, password: str) -> dict:
     if DEV_LOGIN:
         return {"dev": True}
     if not configured():
-        raise HTTPException(503, "authentication is not configured on this server")
+        raise HTTPException(503, "Authentication is not configured on this server")
 
     data = _post("/auth/v1/signup", {"email": email, "password": password})
     user = data.get("user") or data
     auth_id = user.get("id")
     if not auth_id:
-        raise HTTPException(400, "could not create the account")
+        raise HTTPException(400, "Could not create the account")
     return {"auth_id": auth_id,
             # Null when the project requires email confirmation, which is the
             # sensible setting: the account exists but cannot sign in yet.

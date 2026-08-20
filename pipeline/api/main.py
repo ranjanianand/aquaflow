@@ -240,11 +240,11 @@ def signup(payload: dict = Body(...)) -> dict:
     name = (payload.get("name") or "").strip()
 
     if "@" not in email or "." not in email.split("@")[-1]:
-        raise HTTPException(400, "a valid email address is required")
+        raise HTTPException(400, "A valid email address is required")
     # Supabase enforces its own minimum; this one is ours, stated so the
     # message comes from us rather than from a provider error.
     if len(password) < 10:
-        raise HTTPException(400, "the password must be at least 10 characters")
+        raise HTTPException(400, "The password must be at least 10 characters")
 
     created = identity.sign_up(email, password)
 
@@ -277,7 +277,7 @@ def login(payload: dict = Body(...)) -> dict:
     email = (payload.get("email") or "").strip().lower()
     password = payload.get("password") or ""
     if not email or not password:
-        raise HTTPException(400, "email and password are required")
+        raise HTTPException(400, "Email and password are required")
 
     result = identity.sign_in(email, password)
 

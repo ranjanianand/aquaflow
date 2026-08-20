@@ -7,4 +7,7 @@ psycopg[binary]>=3.2,<3.3
 python-multipart>=0.0.9
 # Verifying the Supabase project JWT. HS256 with the project secret;
 # no network call, so a slow identity provider cannot stall a request.
-pyjwt>=2.9,<3
+# [crypto] pulls in `cryptography`, which PyJWT needs for ES256. Supabase
+# signs with an asymmetric key on new projects; without this the import
+# succeeds and verification fails at runtime with a confusing error.
+pyjwt[crypto]>=2.9,<3
