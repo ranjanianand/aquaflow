@@ -1,0 +1,53 @@
+# Serves the exported dashboard on Railway.
+#
+# Railway assigns a port per deploy and hands it over as $PORT, so the listen
+# directive is substituted at container start rather than baked in. nginx has
+# no environment-variable support of its own; envsubst fills this template.
+#
+# Unlike the local config there is no /api proxy here. The two services are
+# separate on Railway and the browser calls the API's own hostname, so the API
+# must name this origin in CORS_ORIGINS.
+
+server {
+    listen       ${PORT};
+    server_name  _;
+
+    root  /usr/share/nginx/html;
+    index index.html;
+
+    # Relative redirects. With trailingSlash: true a request for /dashboard is
+    # redirected to /dashboard/, and an absolute Location built from the port
+    # nginx sees inside the container sends the browser somewhere that does not
+    # exist behind a proxy.
+    absolute_redirect off;
+
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+    gzip_min_length 1024;
+
+    # Hashed asset names never change content.
+    location /_next/static/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # trailingSlash: true means /monitoring is a directory holding index.html.
+    location / {
+        try_files $uri $uri/ $uri.html /404.html;
+    }
+
+    # Never cache the HTML, or a redeploy leaves browsers holding references to
+    # bundles that no longer exist — a failure a hard refresh fixes and nobody
+    # thinks to try.
+    location ~* \.html$ {
+        expires -1;
+        add_header Cache-Control "no-store";
+    }
+
+    # Railway's healthcheck needs something cheap that does not depend on the
+    # API being up.
+    location = /healthz {
+        access_log off;
+        return 200 "ok\n";
+    }
+}

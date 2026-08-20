@@ -1,5 +1,33 @@
+# Build context. Everything here is either rebuilt inside the image, useless to
+# it, or unreadable — airflow/logs holds a broken symlink that fails the build
+# outright with "file cannot be accessed by the system".
+
 node_modules
 .next
+out
 .git
-.env*.local
-README.md
+.github
+
+# Airflow's runtime state. Logs contain a dangling "latest" symlink.
+airflow/logs
+airflow/plugins
+
+# Generated gateway data and the rig that writes it.
+gateway-rig
+Raw_data_PLC
+
+# Local environment and editor noise.
+.env
+.env.*
+*.log
+.DS_Store
+Thumbs.db
+__pycache__
+*.pyc
+.venv
+
+# Scratch scripts only. NOT *.mjs — postcss.config.mjs is required for
+# Tailwind, and excluding it makes `@import "tw-animate-css"` unresolvable
+# with an error that names the package rather than the missing config.
+.*.mjs
+tests/__pycache__

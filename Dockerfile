@@ -1,12 +1,17 @@
-# AquaFlow dashboard — Next.js standalone.
+# AquaFlow dashboard — static export, served by nginx.
 #
-# NEXT_PUBLIC_API_URL is INLINED INTO THE JAVASCRIPT AT BUILD TIME. It must be
-# a build argument, not a runtime variable: set it at runtime and the browser
-# still calls whatever was baked in — 127.0.0.1:8000, which resolves to the
-# visitor's own machine and fails with no useful error.
+# next.config sets `output: "export"`, so the build produces a directory of
+# files and no Node server. An earlier version of this file copied
+# .next/standalone and ran server.js, which that output mode never creates:
+# the build failed at the COPY, after installing everything.
+#
+# NEXT_PUBLIC_API_URL IS INLINED INTO THE JAVASCRIPT AT BUILD TIME. It must be
+# a build argument, not a runtime variable — set it at runtime and the browser
+# still calls whatever was baked in, which is 127.0.0.1:8000: the visitor's own
+# machine, failing with no useful error.
 #
 # On Railway, add it under Variables before the first build; Railway passes
-# variables as build args automatically.
+# service variables to the builder automatically.
 
 FROM node:22-alpine AS deps
 WORKDIR /app
@@ -29,18 +34,16 @@ RUN test -n "$NEXT_PUBLIC_API_URL" || \
     (echo "NEXT_PUBLIC_API_URL is required at build time" && exit 1)
 RUN npm run build
 
-FROM node:22-alpine AS runner
-WORKDIR /app
-ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
+FROM nginx:1.27-alpine AS runner
 
-RUN addgroup -g 10001 nodejs && adduser -u 10001 -G nodejs -S nextjs
+# The export, and the config that serves it. The config is a template because
+# Railway assigns $PORT per deploy and nginx cannot read the environment.
+COPY --from=builder /app/out /usr/share/nginx/html
+COPY deploy/railway-nginx.conf.template /etc/nginx/templates/default.conf.template
 
-COPY --from=builder /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-
-USER nextjs
-EXPOSE 3000
-
-# Railway injects PORT. Next's standalone server reads it from the environment.
-CMD ["node", "server.js"]
+# The nginx image runs envsubst over /etc/nginx/templates at start-up. Only
+# $PORT is substituted: leaving the list open would also replace nginx's own
+# $uri and $host, breaking every location block.
+ENV NGINX_ENVSUBST_FILTER="PORT"
+ENV PORT=8080
+EXPOSE 8080
