@@ -53,8 +53,14 @@ CREATE TABLE IF NOT EXISTS kb_articles (
 CREATE INDEX IF NOT EXISTS kb_articles_search
     ON kb_articles USING gin (to_tsvector('english', title || ' ' || body));
 
--- Seed the one account that exists today, so the screen shows the real user
--- rather than an empty table. Everything else is created through the app.
-INSERT INTO app_users (email, name, role, status)
-VALUES ('admin@yozytech.com', 'Admin User', 'admin', 'active')
-ON CONFLICT (email) DO NOTHING;
+-- No account is seeded here.
+--
+-- This used to insert admin@yozytech.com as an active administrator so the
+-- users screen was not empty. On a local database that is harmless. On a
+-- deployed one it is a backdoor: app_users rows bind to whoever first signs
+-- in with the matching address, so anyone who registered that email through
+-- Supabase would have inherited full administrator access to every plant,
+-- without an administrator granting anything.
+--
+-- The first real account is granted through claim_first_admin() in 008_auth.sql,
+-- which binds to an identity that has actually authenticated.
