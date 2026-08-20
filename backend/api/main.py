@@ -16,6 +16,7 @@ that looks like one would invite a command that silently never arrives.
 """
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 from contextlib import asynccontextmanager
@@ -54,12 +55,34 @@ DSN = os.environ.get("DATABASE_URL", "")
 # At development scale a connect per request costs ~2 ms and is entirely
 # reliable. Restore the pool when this is deployed to Linux, which is the only
 # place it needs to hold a real connection count.
+log = logging.getLogger("mwts.api")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Probe the database, and report rather than refuse to start.
+
+    This used to raise, on the reasoning that failing at startup beats
+    failing on the first request. That holds when a person is watching a
+    terminal. On a platform that restarts anything whose healthcheck fails,
+    it turns a momentarily unreachable database into a restart loop whose
+    only visible symptom is "healthcheck failure" — a message that points
+    nowhere near the cause.
+
+    So the probe still runs and still says exactly what went wrong, but the
+    process lives. /health then reports the database as unavailable, which
+    is the difference between a diagnosis and a guess.
+    """
     if not DSN:
-        raise RuntimeError("DATABASE_URL is not set")
-    with psycopg.connect(DSN, connect_timeout=5) as c, c.cursor() as cur:
-        cur.execute("SELECT 1")          # fail at startup, not on first request
+        log.error("DATABASE_URL is not set — every endpoint that reads the "
+                  "database will fail until it is")
+    else:
+        try:
+            with psycopg.connect(DSN, connect_timeout=5) as c, c.cursor() as cur:
+                cur.execute("SELECT 1")
+            log.info("database reachable")
+        except Exception as exc:
+            log.error("database unreachable at startup: %s", exc)
     yield
 
 
@@ -325,8 +348,25 @@ def me(user: Principal = Depends(auth.current_user)) -> dict:
 
 @app.get("/health")
 def health() -> dict:
-    rows = q("SELECT count(*) AS n FROM readings")
-    return {"ok": True, "readings": rows[0]["n"]}
+    """Liveness, plus whatever can be said about the database.
+
+    This deliberately answers 200 even when the database is unreachable.
+    Railway restarts a container whose healthcheck fails, so tying liveness
+    to Postgres meant the API could never start before the database was
+    ready — and the deploy failed with "healthcheck failure", which says
+    nothing about the actual cause.
+
+    The database verdict is reported in the body instead, where it can be
+    read rather than guessed at.
+    """
+    try:
+        rows = q("SELECT count(*) AS n FROM readings")
+        return {"ok": True, "database": "connected", "readings": rows[0]["n"]}
+    except Exception as exc:
+        # The message names the host and the failure; it is what tells you
+        # whether DATABASE_URL is wrong, unreachable, or simply has no
+        # schema loaded yet.
+        return {"ok": True, "database": "unavailable", "detail": str(exc)[:300]}
 
 
 @app.get("/plants")
