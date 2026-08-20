@@ -32,6 +32,20 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # visitor — a failure that costs far more to diagnose than to prevent.
 RUN test -n "$NEXT_PUBLIC_API_URL" || \
     (echo "NEXT_PUBLIC_API_URL is required at build time" && exit 1)
+# The scheme is checked because omitting it fails silently and confusingly.
+# "api.example.com/plants" is a RELATIVE path, so the browser resolves it
+# against the dashboard's own origin and requests
+# https://dashboard.example.com/api.example.com/plants, which 404s from the
+# static server. Nothing in the build or the deploy logs hints at the cause.
+RUN case "$NEXT_PUBLIC_API_URL" in \
+      http://*|https://*) ;; \
+      *) echo "NEXT_PUBLIC_API_URL must be absolute (https://...) - a value without a scheme is a relative path and resolves against the dashboard origin" && exit 1 ;; \
+    esac
+
+# A trailing slash produces // in every request path.
+RUN case "$NEXT_PUBLIC_API_URL" in \
+      */) echo "NEXT_PUBLIC_API_URL must not end with a slash" && exit 1 ;; \
+    esac
 RUN npm run build
 
 FROM nginx:1.27-alpine AS runner
