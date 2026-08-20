@@ -159,9 +159,21 @@ def main() -> int:
                 timescale = cur.fetchone() is not None
 
         print("SCHEMA")
-        run_sql_file(conn, HERE / "schema" / "001_schema.sql")
-        part2 = "002_timescaledb.sql" if timescale else "002_plain_postgres.sql"
-        run_sql_file(conn, HERE / "schema" / part2)
+        # Every numbered file, in order — not a hardcoded list of two.
+        #
+        # 003 onwards were added after this function was written and never
+        # wired in. That went unnoticed for as long as the only database
+        # anyone used already had them applied by hand; the first genuinely
+        # empty database failed in seed() with "column data_type of relation
+        # sensors does not exist", which points at the seed rather than at the
+        # migration that never ran.
+        #
+        # The two 002 variants are alternatives, so only the chosen one runs.
+        skip = "002_timescaledb.sql" if not timescale else "002_plain_postgres.sql"
+        for f in sorted((HERE / "schema").glob("*.sql")):
+            if f.name == skip:
+                continue
+            run_sql_file(conn, f)
 
         print("\nSEED")
         seed(conn, tag_map_path)
